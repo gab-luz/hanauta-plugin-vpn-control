@@ -79,6 +79,7 @@ def _apply_vpn_button_icon(bar, plugin_dir: Path) -> None:
     button.setIcon(icon)
     button.setIconSize(QSize(16, 16))
     button.setText("")
+    button.setProperty("vpnPluginIconPath", str(icon_path))
 
 
 def register_hanauta_bar_plugin(bar, api: dict[str, object]) -> None:
@@ -92,4 +93,5 @@ def register_hanauta_bar_plugin(bar, api: dict[str, object]) -> None:
 
     register_hook("icons", _refresh)
     register_hook("settings_reloaded", _refresh)
+    register_hook("poll", _refresh)
     _refresh()
