@@ -16,24 +16,30 @@ SETTINGS_FILE = (
     / "notification-center"
     / "settings.json"
 )
+_LAST_THEME_CHOICE = "dark"
 
 
 def _theme_choice() -> str:
+    global _LAST_THEME_CHOICE
     try:
         payload = json.loads(SETTINGS_FILE.read_text(encoding="utf-8"))
     except Exception:
-        return "dark"
+        return _LAST_THEME_CHOICE
     appearance = payload.get("appearance", {}) if isinstance(payload, dict) else {}
     appearance = appearance if isinstance(appearance, dict) else {}
     if bool(appearance.get("use_matugen_palette", False)):
-        return "wallpaper_aware"
+        _LAST_THEME_CHOICE = "wallpaper_aware"
+        return _LAST_THEME_CHOICE
     choice = str(appearance.get("theme_choice", "")).strip().lower()
     if choice == "wallpaper-aware":
-        return "wallpaper_aware"
+        _LAST_THEME_CHOICE = "wallpaper_aware"
+        return _LAST_THEME_CHOICE
     if choice:
-        return choice
+        _LAST_THEME_CHOICE = choice
+        return _LAST_THEME_CHOICE
     fallback = str(appearance.get("theme_mode", "dark")).strip().lower()
-    return fallback if fallback else "dark"
+    _LAST_THEME_CHOICE = fallback if fallback else _LAST_THEME_CHOICE
+    return _LAST_THEME_CHOICE
 
 
 def _pick_plugin_icon(plugin_dir: Path) -> Path | None:
@@ -86,5 +92,4 @@ def register_hanauta_bar_plugin(bar, api: dict[str, object]) -> None:
 
     register_hook("icons", _refresh)
     register_hook("settings_reloaded", _refresh)
-    register_hook("poll", _refresh)
     _refresh()
