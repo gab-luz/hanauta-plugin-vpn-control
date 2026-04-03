@@ -66,20 +66,46 @@ def _pick_plugin_icon(plugin_dir: Path) -> Path | None:
     return None
 
 
+def _pick_plugin_state_icons(plugin_dir: Path) -> tuple[Path | None, Path | None]:
+    active_candidates = [
+        plugin_dir / "assets" / "vpn_shield_check.svg",
+        plugin_dir / "assets" / "vpn_key.svg",
+    ]
+    inactive_candidates = [
+        plugin_dir / "assets" / "vpn_lock.svg",
+        plugin_dir / "assets" / "vpn_shield_lock.svg",
+    ]
+    active_icon = next((path for path in active_candidates if path.exists()), None)
+    inactive_icon = next((path for path in inactive_candidates if path.exists()), None)
+    base_icon = _pick_plugin_icon(plugin_dir)
+    if active_icon is None:
+        active_icon = base_icon
+    if inactive_icon is None:
+        inactive_icon = base_icon
+    return active_icon, inactive_icon
+
+
 def _apply_vpn_button_icon(bar, plugin_dir: Path) -> None:
     button = getattr(bar, "vpn_icon", None)
     if not isinstance(button, QPushButton):
         return
-    icon_path = _pick_plugin_icon(plugin_dir)
-    if icon_path is None:
+    active_icon, inactive_icon = _pick_plugin_state_icons(plugin_dir)
+    if active_icon is None or inactive_icon is None:
         return
-    icon = QIcon(str(icon_path))
+    button.setProperty("pluginIconPathActive", str(active_icon))
+    button.setProperty("pluginIconPathInactive", str(inactive_icon))
+
+    active_state = bool(button.property("active"))
+    icon = QIcon(str(active_icon if active_state else inactive_icon))
     if icon.isNull():
         return
     button.setIcon(icon)
     button.setIconSize(QSize(16, 16))
     button.setText("")
-    button.setProperty("vpnPluginIconPath", str(icon_path))
+    button.setProperty(
+        "vpnPluginIconPath",
+        str(active_icon if active_state else inactive_icon),
+    )
 
 
 def register_hanauta_bar_plugin(bar, api: dict[str, object]) -> None:
@@ -93,5 +119,4 @@ def register_hanauta_bar_plugin(bar, api: dict[str, object]) -> None:
 
     register_hook("icons", _refresh)
     register_hook("settings_reloaded", _refresh)
-    register_hook("poll", _refresh)
     _refresh()
