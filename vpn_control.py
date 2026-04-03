@@ -15,7 +15,8 @@ import sys
 from pathlib import Path
 
 from PyQt6.QtCore import QThread, Qt, QTimer, QSize, QStringListModel, pyqtSignal
-from PyQt6.QtGui import QColor, QCursor, QFont, QFontDatabase, QIcon, QPalette
+from PyQt6.QtGui import QColor, QCursor, QFont, QFontDatabase, QIcon, QPainter, QPalette, QPixmap
+from PyQt6.QtSvg import QSvgRenderer
 from PyQt6.QtWidgets import (
     QApplication,
     QCheckBox,
@@ -38,9 +39,17 @@ from PyQt6.QtWidgets import (
 )
 
 
-from pyqt.shared.runtime import fonts_root, scripts_root, source_root
-from pyqt.shared.theme import load_theme_palette, palette_mtime, rgba
-from pyqt.shared.button_helpers import create_close_button
+try:
+    from pyqt.shared.runtime import fonts_root, scripts_root, source_root
+    from pyqt.shared.theme import load_theme_palette, palette_mtime, rgba
+    from pyqt.shared.button_helpers import create_close_button
+except ModuleNotFoundError:
+    fallback_src = Path.home() / ".config" / "i3" / "hanauta" / "src"
+    if fallback_src.exists() and str(fallback_src) not in sys.path:
+        sys.path.insert(0, str(fallback_src))
+    from pyqt.shared.runtime import fonts_root, scripts_root, source_root
+    from pyqt.shared.theme import load_theme_palette, palette_mtime, rgba
+    from pyqt.shared.button_helpers import create_close_button
 
 APP_DIR = source_root()
 if str(APP_DIR) not in sys.path:
@@ -57,6 +66,17 @@ WRAPPER_BACKUP_DIR = STATE_DIR / "vpn-wrapper-backups"
 ICON_ASSETS_DIR = APP_DIR / "assets" / "icons"
 FLATPAK_ICON_PATH = ICON_ASSETS_DIR / "flatpak.svg"
 TUX_ICON_PATH = ICON_ASSETS_DIR / "tux.svg"
+PLUGIN_ROOT = Path(__file__).resolve().parent
+PLUGIN_ASSETS_DIR = PLUGIN_ROOT / "assets"
+VPN_ICON_HEADER = PLUGIN_ASSETS_DIR / "wireguard_brand.svg"
+VPN_ICON_ROW = PLUGIN_ASSETS_DIR / "vpn_key.svg"
+VPN_ICON_STATE_ACTIVE = PLUGIN_ASSETS_DIR / "vpn_shield_check.svg"
+VPN_ICON_STATE_INACTIVE = PLUGIN_ASSETS_DIR / "vpn_lock.svg"
+VPN_ICON_STATE_PENDING = PLUGIN_ASSETS_DIR / "vpn_world.svg"
+VPN_ICON_ACTION_REFRESH = PLUGIN_ASSETS_DIR / "vpn_world.svg"
+VPN_ICON_ACTION_ADD = PLUGIN_ASSETS_DIR / "vpn_key.svg"
+VPN_ICON_ACTION_REMOVE = PLUGIN_ASSETS_DIR / "vpn_lock.svg"
+VPN_ICON_ACTION_CLEAR = PLUGIN_ASSETS_DIR / "vpn_shield_lock.svg"
 DESKTOP_DIRS = [
     Path.home() / ".local" / "share" / "applications",
     Path("/usr/local/share/applications"),
@@ -171,6 +191,24 @@ def themed_icon(path: Path, fallback_theme_name: str = "") -> QIcon:
         if not icon.isNull():
             return icon
     return QIcon()
+
+
+def tinted_svg_pixmap(path: Path, color: QColor, size: int = 18) -> QPixmap | None:
+    if not path.exists():
+        return None
+    renderer = QSvgRenderer()
+    if not renderer.load(str(path)) or not renderer.isValid():
+        return None
+    pixmap = QPixmap(size, size)
+    pixmap.fill(Qt.GlobalColor.transparent)
+    painter = QPainter(pixmap)
+    painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+    painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform, True)
+    renderer.render(painter)
+    painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_SourceIn)
+    painter.fillRect(pixmap.rect(), color)
+    painter.end()
+    return pixmap if not pixmap.isNull() else None
 
 
 def normalize_split_tunnel_apps(value: object) -> list[dict[str, str]]:
@@ -841,6 +879,8 @@ class VpnControlPopup(QWidget):
         self._split_tunnel_apps = normalize_split_tunnel_apps(
             load_vpn_service_settings().get("split_tunnel_apps", [])
         )
+        self._header_icon_label: QLabel | None = None
+        self._row_icon_label: QLabel | None = None
         self._setup_window()
         self._build_ui()
         self._apply_styles()
@@ -895,6 +935,7 @@ class VpnControlPopup(QWidget):
         icon = QLabel(material_icon("shield"))
         icon.setObjectName("headerIcon")
         icon.setFont(QFont(self.material_font, 20))
+        self._header_icon_label = icon
         header_text = QVBoxLayout()
         header_text.setContentsMargins(0, 0, 0, 0)
         header_text.setSpacing(2)
@@ -940,6 +981,7 @@ class VpnControlPopup(QWidget):
         combo_icon = QLabel(material_icon("tune"))
         combo_icon.setObjectName("rowIcon")
         combo_icon.setFont(QFont(self.material_font, 18))
+        self._row_icon_label = combo_icon
         self.interface_combo = QComboBox()
         self.interface_combo.setObjectName("interfaceCombo")
         self.interface_combo.setView(QListView())
@@ -1213,6 +1255,61 @@ class VpnControlPopup(QWidget):
         )
         self.style().unpolish(self.state_chip)
         self.style().polish(self.state_chip)
+        self._apply_svg_icons()
+
+    def _apply_svg_icons(self) -> None:
+        color = QColor(self.theme.primary)
+        if self._header_icon_label is not None:
+            pix = tinted_svg_pixmap(VPN_ICON_HEADER, color, 20)
+            if pix is not None:
+                self._header_icon_label.setPixmap(pix)
+                self._header_icon_label.setText("")
+            else:
+                self._header_icon_label.setPixmap(QPixmap())
+                self._header_icon_label.setText(material_icon("shield"))
+
+        if self._row_icon_label is not None:
+            pix = tinted_svg_pixmap(VPN_ICON_ROW, color, 18)
+            if pix is not None:
+                self._row_icon_label.setPixmap(pix)
+                self._row_icon_label.setText("")
+            else:
+                self._row_icon_label.setPixmap(QPixmap())
+                self._row_icon_label.setText(material_icon("tune"))
+        self._apply_action_button_icons()
+
+    def _apply_icon_button_svg(
+        self, button: QPushButton, path: Path, fallback_name: str, size: int = 18
+    ) -> None:
+        pix = tinted_svg_pixmap(path, QColor(self.theme.primary), size)
+        if pix is not None:
+            button.setIcon(QIcon(pix))
+            button.setIconSize(QSize(size, size))
+            button.setText("")
+            return
+        button.setIcon(QIcon())
+        button.setText(material_icon(fallback_name))
+
+    def _apply_action_button_icons(self) -> None:
+        self._apply_icon_button_svg(
+            self.refresh_button, VPN_ICON_ACTION_REFRESH, "refresh", 18
+        )
+        self._apply_icon_button_svg(self.add_app_button, VPN_ICON_ACTION_ADD, "add", 18)
+        self._apply_icon_button_svg(
+            self.remove_bypass_button, VPN_ICON_ACTION_REMOVE, "delete", 18
+        )
+        self._apply_icon_button_svg(
+            self.clear_bypass_button, VPN_ICON_ACTION_CLEAR, "delete_sweep", 18
+        )
+
+    def _set_state_icon(self, path: Path, fallback_name: str) -> None:
+        pix = tinted_svg_pixmap(path, QColor(self.theme.primary), 18)
+        if pix is not None:
+            self.state_icon.setPixmap(pix)
+            self.state_icon.setText("")
+            return
+        self.state_icon.setPixmap(QPixmap())
+        self.state_icon.setText(material_icon(fallback_name))
 
     def _reload_theme_if_needed(self) -> None:
         current_mtime = palette_mtime()
@@ -1270,7 +1367,7 @@ class VpnControlPopup(QWidget):
         self._building_switch = False
 
         if not interfaces:
-            self.state_icon.setText(material_icon("lock_open"))
+            self._set_state_icon(VPN_ICON_STATE_INACTIVE, "lock_open")
             self.state_label.setText("No WireGuard configs found")
             self.detail_label.setText("Expected `.conf` files in /etc/wireguard.")
             self.state_chip.setProperty("state", "inactive")
@@ -1278,7 +1375,10 @@ class VpnControlPopup(QWidget):
             self.toggle_button.setText("Enable")
             return
 
-        self.state_icon.setText(material_icon("lock" if active else "lock_open"))
+        self._set_state_icon(
+            VPN_ICON_STATE_ACTIVE if active else VPN_ICON_STATE_INACTIVE,
+            "lock" if active else "lock_open",
+        )
         self.state_label.setText("Tunnel active" if active else "Tunnel inactive")
         self.detail_label.setText(f"Selected interface: {selected or interfaces[0]}")
         self.state_chip.setProperty("state", "active" if active else "inactive")
@@ -1585,7 +1685,7 @@ class VpnControlPopup(QWidget):
         self.refresh_button.setEnabled(False)
         self.interface_combo.setEnabled(False)
         self.state_chip.setProperty("state", "inactive")
-        self.state_icon.setText(material_icon("refresh"))
+        self._set_state_icon(VPN_ICON_STATE_PENDING, "refresh")
         self.state_label.setText("Waiting for authentication…")
         self.detail_label.setText(f"Applying changes for {iface}")
         self.footer_label.setText("Authenticate in the polkit dialog if prompted.")
@@ -1604,7 +1704,7 @@ class VpnControlPopup(QWidget):
         self.interface_combo.setEnabled(bool(self.interface_combo.count()))
         if not ok:
             self.state_chip.setProperty("state", "error")
-            self.state_icon.setText(material_icon("lock_open"))
+            self._set_state_icon(VPN_ICON_STATE_INACTIVE, "lock_open")
             self.state_label.setText("WireGuard command failed")
             self.detail_label.setText(message)
             self.style().unpolish(self.state_chip)
