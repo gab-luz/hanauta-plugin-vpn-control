@@ -6,6 +6,8 @@ from pathlib import Path
 
 from PyQt6.QtWidgets import QPushButton
 
+SERVICE_KEY = "vpn_control"
+
 SETTINGS_FILE = (
     Path.home()
     / ".local"
