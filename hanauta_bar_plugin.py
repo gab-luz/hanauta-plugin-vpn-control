@@ -4,8 +4,6 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from PyQt6.QtCore import QSize
-from PyQt6.QtGui import QIcon
 from PyQt6.QtWidgets import QPushButton
 
 SETTINGS_FILE = (
@@ -67,22 +65,10 @@ def _pick_plugin_icon(plugin_dir: Path) -> Path | None:
 
 
 def _pick_plugin_state_icons(plugin_dir: Path) -> tuple[Path | None, Path | None]:
-    active_candidates = [
-        plugin_dir / "assets" / "vpn_shield_check.svg",
-        plugin_dir / "assets" / "vpn_key.svg",
-    ]
-    inactive_candidates = [
-        plugin_dir / "assets" / "vpn_lock.svg",
-        plugin_dir / "assets" / "vpn_shield_lock.svg",
-    ]
-    active_icon = next((path for path in active_candidates if path.exists()), None)
-    inactive_icon = next((path for path in inactive_candidates if path.exists()), None)
-    base_icon = _pick_plugin_icon(plugin_dir)
-    if active_icon is None:
-        active_icon = base_icon
-    if inactive_icon is None:
-        inactive_icon = base_icon
-    return active_icon, inactive_icon
+    # Keep bar icon stable across status polls: same icon for on/off,
+    # selected only by Hanauta theme mode.
+    chosen = _pick_plugin_icon(plugin_dir)
+    return chosen, chosen
 
 
 def _apply_vpn_button_icon(bar, plugin_dir: Path) -> None:
@@ -92,20 +78,12 @@ def _apply_vpn_button_icon(bar, plugin_dir: Path) -> None:
     active_icon, inactive_icon = _pick_plugin_state_icons(plugin_dir)
     if active_icon is None or inactive_icon is None:
         return
-    button.setProperty("pluginIconPathActive", str(active_icon))
-    button.setProperty("pluginIconPathInactive", str(inactive_icon))
-
-    active_state = bool(button.property("active"))
-    icon = QIcon(str(active_icon if active_state else inactive_icon))
-    if icon.isNull():
-        return
-    button.setIcon(icon)
-    button.setIconSize(QSize(16, 16))
-    button.setText("")
-    button.setProperty(
-        "vpnPluginIconPath",
-        str(active_icon if active_state else inactive_icon),
-    )
+    active_str = str(active_icon)
+    inactive_str = str(inactive_icon)
+    if str(button.property("pluginIconPathActive") or "") != active_str:
+        button.setProperty("pluginIconPathActive", active_str)
+    if str(button.property("pluginIconPathInactive") or "") != inactive_str:
+        button.setProperty("pluginIconPathInactive", inactive_str)
 
 
 def register_hanauta_bar_plugin(bar, api: dict[str, object]) -> None:
