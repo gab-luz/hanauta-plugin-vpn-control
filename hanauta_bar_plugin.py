@@ -66,26 +66,67 @@ def _pick_plugin_icon(plugin_dir: Path) -> Path | None:
     return None
 
 
-def _pick_plugin_state_icons(plugin_dir: Path) -> tuple[Path | None, Path | None]:
-    # Keep bar icon stable across status polls: same icon for on/off,
-    # selected only by Hanauta theme mode.
+def _pick_plugin_state_icons(
+    plugin_dir: Path,
+) -> tuple[Path | None, Path | None, Path | None]:
+    # For dark/light themes, use state-aware outline VPN icons.
+    theme = _theme_choice()
+    if theme in {"dark", "light", "custom"}:
+        active_candidates = [
+            plugin_dir / "assets" / "vpn-key-outline.svg",
+            plugin_dir / "assets" / "vpn-key-out.svg",
+            plugin_dir / "vpn-key-outline.svg",
+            plugin_dir / "vpn-key-out.svg",
+            plugin_dir / "assets" / "icon.svg",
+            plugin_dir / "icon.svg",
+        ]
+        inactive_candidates = [
+            plugin_dir / "assets" / "vpn-key-off-outline.svg",
+            plugin_dir / "vpn-key-off-outline.svg",
+            plugin_dir / "assets" / "icon.svg",
+            plugin_dir / "icon.svg",
+        ]
+        alert_candidates = [
+            plugin_dir / "assets" / "vpn-key-alert-outline.svg",
+            plugin_dir / "vpn-key-alert-outline.svg",
+            plugin_dir / "assets" / "vpn-key-off-outline.svg",
+            plugin_dir / "vpn-key-off-outline.svg",
+            plugin_dir / "assets" / "icon.svg",
+            plugin_dir / "icon.svg",
+        ]
+
+        def first_existing(candidates: list[Path]) -> Path | None:
+            for path in candidates:
+                if path.exists():
+                    return path
+            return None
+
+        active = first_existing(active_candidates)
+        inactive = first_existing(inactive_candidates)
+        alert = first_existing(alert_candidates)
+        return active, inactive, alert
+
+    # Wallpaper-aware and other modes: keep a single plugin icon.
     chosen = _pick_plugin_icon(plugin_dir)
-    return chosen, chosen
+    return chosen, chosen, chosen
 
 
 def _apply_vpn_button_icon(bar, plugin_dir: Path) -> None:
     button = getattr(bar, "vpn_icon", None)
     if not isinstance(button, QPushButton):
         return
-    active_icon, inactive_icon = _pick_plugin_state_icons(plugin_dir)
+    active_icon, inactive_icon, alert_icon = _pick_plugin_state_icons(plugin_dir)
     if active_icon is None or inactive_icon is None:
         return
     active_str = str(active_icon)
     inactive_str = str(inactive_icon)
+    alert_str = str(alert_icon) if alert_icon is not None else inactive_str
     if str(button.property("pluginIconPathActive") or "") != active_str:
         button.setProperty("pluginIconPathActive", active_str)
     if str(button.property("pluginIconPathInactive") or "") != inactive_str:
         button.setProperty("pluginIconPathInactive", inactive_str)
+    if str(button.property("pluginIconPathAlert") or "") != alert_str:
+        button.setProperty("pluginIconPathAlert", alert_str)
 
 
 def register_hanauta_bar_plugin(bar, api: dict[str, object]) -> None:
