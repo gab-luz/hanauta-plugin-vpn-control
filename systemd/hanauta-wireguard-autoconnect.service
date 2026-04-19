@@ -1,0 +1,17 @@
+[Unit]
+Description=Hanauta WireGuard auto-connect
+After=network-online.target
+Wants=network-online.target
+ConditionPathExists=/etc/hanauta-wireguard-autoconnect.conf
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+EnvironmentFile=/etc/hanauta-wireguard-autoconnect.conf
+ExecStart=/bin/bash -c 'set -euo pipefail; iface="$${WG_IFACE:-wg0}"; marker="/run/hanauta-wireguard-autoconnect.$$iface.started"; if ip link show "$$iface" >/dev/null 2>&1; then echo "WireGuard $$iface already exists; leaving as-is"; exit 0; fi; wg-quick up "$$iface"; touch "$$marker"'
+ExecStop=/bin/bash -c 'set -euo pipefail; iface="$${WG_IFACE:-wg0}"; marker="/run/hanauta-wireguard-autoconnect.$$iface.started"; if [ -f "$$marker" ]; then wg-quick down "$$iface" || true; rm -f "$$marker"; fi'
+TimeoutStartSec=60
+TimeoutStopSec=30
+
+[Install]
+WantedBy=multi-user.target

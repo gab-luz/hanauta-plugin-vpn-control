@@ -1,0 +1,21 @@
+{
+  "requires_privileged_install": true,
+  "permissions": [
+    {
+      "key": "systemd_root_service",
+      "label": "Root systemd service",
+      "description": "Installs and enables a root systemd unit to auto-connect WireGuard at boot (no password prompt)."
+    },
+    {
+      "key": "etc_config",
+      "label": "/etc config file",
+      "description": "Writes /etc/hanauta-wireguard-autoconnect.conf to select which WireGuard interface to connect."
+    }
+  ],
+  "privileged_install": {
+    "command": ["bash", "${PLUGIN_DIR}/bin/install_root_service.sh"]
+  },
+  "privileged_uninstall": {
+    "command": ["bash", "${PLUGIN_DIR}/bin/uninstall_root_service.sh"]
+  }
+}
