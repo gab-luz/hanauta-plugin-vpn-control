@@ -7,6 +7,8 @@ from pathlib import Path
 from PyQt6.QtWidgets import QPushButton
 
 SERVICE_KEY = "vpn_control"
+SERVICE_STATE_DIR = Path.home() / ".local" / "state" / "hanauta" / "service"
+VPN_CACHE_FILE = SERVICE_STATE_DIR / "plugins" / "vpn_control_wireguard.json"
 
 SETTINGS_FILE = (
     Path.home()
@@ -129,6 +131,42 @@ def _apply_vpn_button_icon(bar, plugin_dir: Path) -> None:
         button.setProperty("pluginIconPathAlert", alert_str)
 
 
+def _load_vpn_state() -> dict[str, object]:
+    try:
+        payload = json.loads(VPN_CACHE_FILE.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def _apply_vpn_runtime_state(bar) -> None:
+    button = getattr(bar, "vpn_icon", None)
+    if not isinstance(button, QPushButton):
+        return
+    payload = _load_vpn_state()
+    state = str(payload.get("wireguard", "")).strip().lower()
+    selected = str(payload.get("wg_selected", "")).strip()
+    has_ifaces = bool(payload.get("interfaces", []))
+    active = state == "on"
+    alert = state not in {"on", "off"} or not has_ifaces or not selected
+    button.setProperty("active", active)
+    button.setProperty("alert", alert)
+    button.setToolTip(f"WireGuard: {selected or 'No config selected'}")
+    refresh = getattr(bar, "_set_vpn_button_icon", None)
+    if callable(refresh):
+        try:
+            refresh(active, alert=alert)
+        except Exception:
+            pass
+    style = getattr(bar, "style", None)
+    if callable(style):
+        try:
+            bar.style().unpolish(button)
+            bar.style().polish(button)
+        except Exception:
+            pass
+
+
 def register_hanauta_bar_plugin(bar, api: dict[str, object]) -> None:
     plugin_dir = Path(str(api.get("plugin_dir", ""))).expanduser()
     register_hook = api.get("register_hook")
@@ -137,7 +175,9 @@ def register_hanauta_bar_plugin(bar, api: dict[str, object]) -> None:
 
     def _refresh() -> None:
         _apply_vpn_button_icon(bar, plugin_dir)
+        _apply_vpn_runtime_state(bar)
 
     register_hook("icons", _refresh)
     register_hook("settings_reloaded", _refresh)
+    register_hook("poll", _apply_vpn_runtime_state)
     _refresh()

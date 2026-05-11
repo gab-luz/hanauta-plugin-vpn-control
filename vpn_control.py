@@ -59,6 +59,8 @@ SCRIPTS_DIR = scripts_root()
 FONTS_DIR = fonts_root()
 STATE_DIR = Path.home() / ".local" / "state" / "hanauta" / "notification-center"
 SETTINGS_FILE = STATE_DIR / "settings.json"
+SERVICE_STATE_DIR = Path.home() / ".local" / "state" / "hanauta" / "service"
+VPN_CACHE_FILE = SERVICE_STATE_DIR / "plugins" / "vpn_control_wireguard.json"
 SPLIT_HELPER = SCRIPTS_DIR / "vpn_bypass_helper.py"
 SPLIT_LAUNCHER = SCRIPTS_DIR / "vpn_bypass_launcher.py"
 LOCAL_APPLICATIONS_DIR = Path.home() / ".local" / "share" / "applications"
@@ -177,6 +179,14 @@ def run_script_bg(script_name: str, *args: str) -> None:
         )
     except Exception:
         pass
+
+
+def load_wireguard_cache() -> dict[str, object]:
+    try:
+        payload = json.loads(VPN_CACHE_FILE.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+    return payload if isinstance(payload, dict) else {}
 
 
 def material_icon(name: str) -> str:
@@ -1320,12 +1330,8 @@ class VpnControlPopup(QWidget):
         self._apply_styles()
 
     def _load_status(self) -> dict[str, str]:
-        raw = run_script("vpn.sh", "--status")
-        if not raw:
-            return {"wireguard": "off", "wg_selected": ""}
-        try:
-            payload = json.loads(raw)
-        except Exception:
+        payload = load_wireguard_cache()
+        if not payload:
             return {"wireguard": "off", "wg_selected": ""}
         return {
             "wireguard": str(payload.get("wireguard", "off")),
@@ -1333,8 +1339,11 @@ class VpnControlPopup(QWidget):
         }
 
     def _load_interfaces(self) -> list[str]:
-        raw = run_script("vpn.sh", "--interfaces")
-        return [line.strip() for line in raw.splitlines() if line.strip()]
+        payload = load_wireguard_cache()
+        raw_ifaces = payload.get("interfaces", [])
+        if not isinstance(raw_ifaces, list):
+            return []
+        return [str(item).strip() for item in raw_ifaces if str(item).strip()]
 
     def refresh_state(self) -> None:
         if self._toggle_worker is not None and self._toggle_worker.isRunning():
