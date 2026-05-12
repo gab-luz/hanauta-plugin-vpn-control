@@ -1032,6 +1032,10 @@ class VpnControlPopup(QWidget):
         self.refresh_button.setFont(QFont(self.material_font, 18))
         self.refresh_button.setToolTip("Refresh WireGuard configs from Hanauta service")
         self.refresh_button.clicked.connect(self._refresh_interfaces_from_service)
+        self.refresh_text_button = QPushButton("Refresh configs")
+        self.refresh_text_button.setObjectName("secondaryButton")
+        self.refresh_text_button.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        self.refresh_text_button.clicked.connect(self._refresh_interfaces_from_service)
 
         self.toggle_button = QPushButton("Enable")
         self.toggle_button.setObjectName("primaryButton")
@@ -1039,6 +1043,7 @@ class VpnControlPopup(QWidget):
         self.toggle_button.clicked.connect(self._toggle_selected)
 
         actions.addWidget(self.refresh_button)
+        actions.addWidget(self.refresh_text_button)
         actions.addWidget(self.toggle_button, 1)
         layout.addLayout(actions)
 
@@ -1676,6 +1681,7 @@ class VpnControlPopup(QWidget):
             return
         self.toggle_button.setEnabled(False)
         self.refresh_button.setEnabled(False)
+        self.refresh_text_button.setEnabled(False)
         self.interface_combo.setEnabled(False)
         self.state_chip.setProperty("state", "inactive")
         self._set_state_icon(VPN_ICON_STATE_PENDING, "refresh")
@@ -1692,6 +1698,7 @@ class VpnControlPopup(QWidget):
     def _handle_toggle_finished(self, ok: bool, message: str) -> None:
         self._toggle_worker = None
         self.refresh_button.setEnabled(True)
+        self.refresh_text_button.setEnabled(True)
         self.footer_label.setText(message)
         self.refresh_state()
         self.interface_combo.setEnabled(bool(self.interface_combo.count()))

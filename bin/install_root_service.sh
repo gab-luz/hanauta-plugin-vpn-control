@@ -79,12 +79,13 @@ PY
 fi
 
 systemctl daemon-reload
-systemctl reset-failed "$UNIT_NAME" >/dev/null 2>&1 || true
-systemctl enable --now "$UNIT_NAME"
 systemctl reset-failed "$AGENT_UNIT_NAME" >/dev/null 2>&1 || true
 systemctl enable --now "$AGENT_UNIT_NAME"
+systemctl reset-failed "$UNIT_NAME" >/dev/null 2>&1 || true
+# Keep autoconnect enabled, but don't block installation if it can't start now.
+systemctl enable "$UNIT_NAME" >/dev/null 2>&1 || true
+systemctl start "$UNIT_NAME" >/dev/null 2>&1 || true
 
-systemctl is-active --quiet "$UNIT_NAME"
 systemctl is-active --quiet "$AGENT_UNIT_NAME"
 
 runtime_uid="${PKEXEC_UID:-}"
@@ -108,5 +109,5 @@ fi
 
 echo "Installed and enabled: $UNIT_NAME, $AGENT_UNIT_NAME"
 echo "Status checks:"
-systemctl --no-pager --full -n 5 status "$UNIT_NAME" || true
 systemctl --no-pager --full -n 5 status "$AGENT_UNIT_NAME" || true
+systemctl --no-pager --full -n 5 status "$UNIT_NAME" || true
