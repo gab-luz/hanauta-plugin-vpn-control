@@ -13,6 +13,7 @@ import shutil
 import subprocess
 import sys
 import time
+import uuid
 from pathlib import Path
 
 from PyQt6.QtCore import QThread, Qt, QTimer, QSize, QStringListModel, pyqtSignal
@@ -62,7 +63,9 @@ STATE_DIR = Path.home() / ".local" / "state" / "hanauta" / "notification-center"
 SETTINGS_FILE = STATE_DIR / "settings.json"
 SERVICE_STATE_DIR = Path.home() / ".local" / "state" / "hanauta" / "service"
 VPN_CACHE_FILE = SERVICE_STATE_DIR / "plugins" / "vpn_control_wireguard.json"
-SPLIT_HELPER = SCRIPTS_DIR / "vpn_bypass_helper.py"
+WG_AGENT_RUN_DIR = Path("/run/hanauta-wireguard-agent")
+WG_AGENT_REQUEST_FILE = WG_AGENT_RUN_DIR / "request.json"
+WG_AGENT_RESPONSE_FILE = WG_AGENT_RUN_DIR / "response.json"
 SPLIT_LAUNCHER = SCRIPTS_DIR / "vpn_bypass_launcher.py"
 LOCAL_APPLICATIONS_DIR = Path.home() / ".local" / "share" / "applications"
 WRAPPER_BACKUP_DIR = STATE_DIR / "vpn-wrapper-backups"
@@ -198,56 +201,41 @@ def save_wireguard_cache(payload: dict[str, object]) -> None:
         pass
 
 
-def list_wireguard_interfaces_privileged() -> list[str]:
-    if not shutil.which("pkexec"):
-        return []
-    py = (
-        "from pathlib import Path; "
-        "p=Path('/etc/wireguard'); "
-        "print('\\n'.join(sorted(x.stem for x in p.glob('*.conf') if x.stem)))"
-    )
+def wireguard_service_request(
+    action: str, *, interface: str = "", timeout: float = 4.0
+) -> dict[str, object]:
+    if not WG_AGENT_RUN_DIR.exists():
+        return {"ok": False, "message": "Hanauta WireGuard root agent is not running."}
+    request_id = str(uuid.uuid4())
+    payload = {
+        "request_id": request_id,
+        "action": action,
+        "interface": interface,
+        "requested_at": time.time(),
+    }
     try:
-        result = subprocess.run(
-            ["pkexec", "python3", "-c", py],
-            capture_output=True,
-            text=True,
-            timeout=20.0,
-            check=False,
+        WG_AGENT_REQUEST_FILE.write_text(
+            json.dumps(payload, ensure_ascii=True), encoding="utf-8"
         )
-    except Exception:
-        return []
-    if result.returncode != 0:
-        return []
-    return [line.strip() for line in result.stdout.splitlines() if line.strip()]
+    except Exception as exc:
+        return {"ok": False, "message": f"Failed to talk to root agent: {exc}"}
 
-
-def resolvconf_install_plan() -> tuple[list[str], str] | None:
-    if shutil.which("pacman"):
-        return (
-            ["pkexec", "pacman", "-Sy", "--noconfirm", "openresolv"],
-            "Será instalado o pacote `openresolv` via pacman com privilégios de root.",
-        )
-    if shutil.which("apt-get"):
-        return (
-            [
-                "pkexec",
-                "bash",
-                "-lc",
-                "apt-get update && apt-get install -y resolvconf",
-            ],
-            "Será instalado o pacote `resolvconf` via apt com privilégios de root.",
-        )
-    if shutil.which("dnf"):
-        return (
-            ["pkexec", "dnf", "-y", "install", "openresolv"],
-            "Será instalado o pacote `openresolv` via dnf com privilégios de root.",
-        )
-    if shutil.which("zypper"):
-        return (
-            ["pkexec", "zypper", "--non-interactive", "install", "openresolv"],
-            "Será instalado o pacote `openresolv` via zypper com privilégios de root.",
-        )
-    return None
+    deadline = time.time() + max(0.5, timeout)
+    while time.time() < deadline:
+        try:
+            raw = WG_AGENT_RESPONSE_FILE.read_text(encoding="utf-8")
+            response = json.loads(raw)
+        except Exception:
+            time.sleep(0.1)
+            continue
+        if not isinstance(response, dict):
+            time.sleep(0.1)
+            continue
+        if str(response.get("request_id", "")).strip() != request_id:
+            time.sleep(0.1)
+            continue
+        return response
+    return {"ok": False, "message": "Timed out waiting for Hanauta WireGuard root agent."}
 
 
 def material_icon(name: str) -> str:
@@ -884,45 +872,11 @@ class VpnToggleWorker(QThread):
         self.interface = interface
 
     def run(self) -> None:
-        script_path = SCRIPTS_DIR / "vpn.sh"
-        if not script_path.exists():
-            self.completed.emit(False, "Missing vpn.sh helper.")
-            return
-
-        try:
-            result = subprocess.run(
-                [str(script_path), "--toggle-wg", self.interface],
-                capture_output=True,
-                text=True,
-                timeout=45.0,
-                check=False,
-            )
-        except subprocess.TimeoutExpired:
-            self.completed.emit(False, "Timed out waiting for WireGuard.")
-            return
-        except Exception as exc:
-            self.completed.emit(False, f"WireGuard toggle failed: {exc}")
-            return
-
-        payload = {}
-        stdout = result.stdout.strip()
-        stderr = result.stderr.strip()
-        if stdout:
-            try:
-                payload = json.loads(stdout)
-            except Exception:
-                payload = {}
-
-        if payload:
-            ok = bool(payload.get("ok", result.returncode == 0))
-            message = str(payload.get("message", "")).strip()
-        else:
-            ok = result.returncode == 0
-            message = stdout or stderr
-
+        response = wireguard_service_request("toggle", interface=self.interface, timeout=70.0)
+        ok = bool(response.get("ok", False))
+        message = str(response.get("message", "")).strip()
         if not message:
             message = "WireGuard updated." if ok else "WireGuard command failed."
-
         self.completed.emit(ok, message)
 
 
@@ -1076,7 +1030,8 @@ class VpnControlPopup(QWidget):
         self.refresh_button.setObjectName("iconButton")
         self.refresh_button.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
         self.refresh_button.setFont(QFont(self.material_font, 18))
-        self.refresh_button.clicked.connect(self.refresh_state)
+        self.refresh_button.setToolTip("Refresh WireGuard configs from Hanauta service")
+        self.refresh_button.clicked.connect(self._refresh_interfaces_from_service)
 
         self.toggle_button = QPushButton("Enable")
         self.toggle_button.setObjectName("primaryButton")
@@ -1392,6 +1347,15 @@ class VpnControlPopup(QWidget):
         self.theme = load_theme_palette()
         self._apply_styles()
 
+    def _refresh_interfaces_from_service(self) -> None:
+        self.footer_label.setText("Refreshing WireGuard configs from Hanauta service…")
+        response = wireguard_service_request("list_interfaces", timeout=8.0)
+        if bool(response.get("ok", False)):
+            self.footer_label.setText("WireGuard configs refreshed.")
+        else:
+            self.footer_label.setText(str(response.get("message", "Failed to refresh WireGuard configs.")))
+        self.refresh_state()
+
     def _load_status(self) -> dict[str, str]:
         payload = load_wireguard_cache()
         if not payload:
@@ -1415,19 +1379,16 @@ class VpnControlPopup(QWidget):
             return []
         self._privileged_probe_attempted = True
         self._last_privileged_probe_at = now
-        privileged = list_wireguard_interfaces_privileged()
-        if privileged:
-            cache = payload if isinstance(payload, dict) else {}
-            cache["interfaces"] = privileged
-            if not str(cache.get("wg_selected", "")).strip():
-                cache["wg_selected"] = privileged[0]
-            if str(cache.get("wireguard", "")).strip().lower() not in {"on", "off"}:
-                cache["wireguard"] = "off"
-            save_wireguard_cache(cache)
-            self.footer_label.setText(
-                "Loaded WireGuard interfaces via privileged helper."
-            )
-        return privileged
+        response = wireguard_service_request("list_interfaces", timeout=6.0)
+        if bool(response.get("ok", False)):
+            refreshed = load_wireguard_cache()
+            ifaces = refreshed.get("interfaces", []) if isinstance(refreshed, dict) else []
+            interfaces = [str(item).strip() for item in ifaces if str(item).strip()]
+            if interfaces:
+                self.footer_label.setText("WireGuard configs refreshed from Hanauta service.")
+                return interfaces
+        self.footer_label.setText(str(response.get("message", "Failed to refresh WireGuard configs.")))
+        return []
 
     def refresh_state(self) -> None:
         if self._toggle_worker is not None and self._toggle_worker.isRunning():
@@ -1698,77 +1659,16 @@ class VpnControlPopup(QWidget):
             return
         status = self._load_status()
         active = status.get("wireguard") == "on"
-        iface = self.interface_combo.currentText().strip() or status.get("wg_selected", "").strip()
         label = str(entry.get("label", entry.get("target", "launcher"))).strip()
-        if not active:
-            if launch_direct_entry(entry):
-                self.footer_label.setText(f"Launched {label}. WireGuard is currently inactive.")
+        if launch_direct_entry(entry):
+            if active:
+                self.footer_label.setText(
+                    f"Launched {label}. Split-tunnel bypass now requires Hanauta service root integration."
+                )
             else:
-                self.footer_label.setText(f"Failed to launch {label}.")
+                self.footer_label.setText(f"Launched {label}. WireGuard is currently inactive.")
             return
-        if not SPLIT_HELPER.exists():
-            self.footer_label.setText("Missing vpn_bypass_helper.py helper.")
-            return
-        if shutil.which("pkexec") is None:
-            self.footer_label.setText("pkexec is required to launch apps outside the tunnel.")
-            return
-
-        command = [
-            "pkexec",
-            sys.executable,
-            str(SPLIT_HELPER),
-            "--launch",
-            "--mode",
-            str(entry.get("kind", "desktop")),
-            "--target",
-            str(entry.get("target", "")),
-            "--interface",
-            iface,
-            "--uid",
-            str(os.getuid()),
-            "--gid",
-            str(os.getgid()),
-            "--groups",
-            ",".join(str(group_id) for group_id in os.getgroups()),
-            "--home",
-            str(Path.home()),
-            "--user",
-            os.environ.get("USER", "user"),
-            "--display",
-            os.environ.get("DISPLAY", ""),
-            "--dbus-address",
-            os.environ.get("DBUS_SESSION_BUS_ADDRESS", ""),
-            "--xauthority",
-            os.environ.get("XAUTHORITY", ""),
-            "--runtime-dir",
-            os.environ.get("XDG_RUNTIME_DIR", ""),
-            "--wayland-display",
-            os.environ.get("WAYLAND_DISPLAY", ""),
-            "--current-desktop",
-            os.environ.get("XDG_CURRENT_DESKTOP", ""),
-            "--desktop-session",
-            os.environ.get("DESKTOP_SESSION", ""),
-        ]
-        try:
-            result = subprocess.run(
-                command,
-                capture_output=True,
-                text=True,
-                timeout=45.0,
-                check=False,
-            )
-        except subprocess.TimeoutExpired:
-            self.footer_label.setText("Timed out waiting for the split-tunnel helper.")
-            return
-        except Exception as exc:
-            self.footer_label.setText(f"Split-tunnel launch failed: {exc}")
-            return
-
-        if result.returncode == 0:
-            self.footer_label.setText(f"Launched {label} outside WireGuard.")
-            return
-        message = (result.stderr or result.stdout).strip() or "Authentication may have been cancelled."
-        self.footer_label.setText(message)
+        self.footer_label.setText(f"Failed to launch {label}.")
 
     def _toggle_selected(self) -> None:
         iface = self.interface_combo.currentText().strip()
@@ -1779,9 +1679,9 @@ class VpnControlPopup(QWidget):
         self.interface_combo.setEnabled(False)
         self.state_chip.setProperty("state", "inactive")
         self._set_state_icon(VPN_ICON_STATE_PENDING, "refresh")
-        self.state_label.setText("Waiting for authentication…")
+        self.state_label.setText("Applying tunnel change…")
         self.detail_label.setText(f"Applying changes for {iface}")
-        self.footer_label.setText("Authenticate in the polkit dialog if prompted.")
+        self.footer_label.setText("Sending request to Hanauta service.")
         self.style().unpolish(self.state_chip)
         self.style().polish(self.state_chip)
 
@@ -1796,9 +1696,6 @@ class VpnControlPopup(QWidget):
         self.refresh_state()
         self.interface_combo.setEnabled(bool(self.interface_combo.count()))
         if not ok:
-            lowered = message.lower()
-            if "resolvconf" in lowered and "not found" in lowered:
-                self._prompt_install_resolvconf()
             self.state_chip.setProperty("state", "error")
             self._set_state_icon(VPN_ICON_STATE_INACTIVE, "lock_open")
             self.state_label.setText("WireGuard command failed")
@@ -1806,70 +1703,6 @@ class VpnControlPopup(QWidget):
             self.style().unpolish(self.state_chip)
             self.style().polish(self.state_chip)
         self.toggle_button.setEnabled(bool(self.interface_combo.count()))
-
-    def _prompt_install_resolvconf(self) -> None:
-        plan = resolvconf_install_plan()
-        if plan is None:
-            QMessageBox.warning(
-                self,
-                "Missing resolvconf",
-                "Não encontrei um gerenciador de pacotes suportado para instalar `resolvconf` automaticamente.",
-            )
-            return
-        command, notice = plan
-        first = QMessageBox.question(
-            self,
-            "Install resolvconf",
-            (
-                "WireGuard falhou porque `resolvconf` não está disponível.\n\n"
-                f"{notice}\n\n"
-                "Deseja continuar?"
-            ),
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            QMessageBox.StandardButton.No,
-        )
-        if first != QMessageBox.StandardButton.Yes:
-            self.footer_label.setText("Instalação de resolvconf cancelada pelo usuário.")
-            return
-        second = QMessageBox.question(
-            self,
-            "Confirm privileged install",
-            (
-                "Confirma novamente que deseja instalar esse pacote com acesso root?\n\n"
-                "A seguir, o Polkit pedirá sua senha."
-            ),
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            QMessageBox.StandardButton.No,
-        )
-        if second != QMessageBox.StandardButton.Yes:
-            self.footer_label.setText("Instalação de resolvconf cancelada na segunda confirmação.")
-            return
-        try:
-            result = subprocess.run(
-                command,
-                capture_output=True,
-                text=True,
-                timeout=300.0,
-                check=False,
-            )
-        except subprocess.TimeoutExpired:
-            self.footer_label.setText("Tempo esgotado ao instalar resolvconf.")
-            return
-        except Exception as exc:
-            self.footer_label.setText(f"Falha ao instalar resolvconf: {exc}")
-            return
-        if result.returncode == 0:
-            self.footer_label.setText("resolvconf instalado. Tente ativar o túnel novamente.")
-            QMessageBox.information(
-                self,
-                "Install complete",
-                "Pacote instalado com sucesso. Agora tente conectar o WireGuard novamente.",
-            )
-            return
-        details = (result.stderr or result.stdout).strip()
-        if not details:
-            details = "A instalação falhou ou foi cancelada."
-        self.footer_label.setText(details)
 
 
 def main() -> int:
