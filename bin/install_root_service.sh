@@ -87,4 +87,26 @@ systemctl enable --now "$AGENT_UNIT_NAME"
 systemctl is-active --quiet "$UNIT_NAME"
 systemctl is-active --quiet "$AGENT_UNIT_NAME"
 
+runtime_uid="${PKEXEC_UID:-}"
+runtime_user="${SUDO_USER:-}"
+if [ -z "$runtime_user" ] && [ -n "$runtime_uid" ]; then
+  runtime_user="$(getent passwd "$runtime_uid" | cut -d: -f1 || true)"
+fi
+
+if [ -n "$runtime_uid" ] && [ -n "$runtime_user" ]; then
+  # Best effort: refresh the user hanauta-service cache right after install.
+  runuser -u "$runtime_user" -- env XDG_RUNTIME_DIR="/run/user/$runtime_uid" \
+    systemctl --user restart hanauta-service >/dev/null 2>&1 || true
+fi
+
+# Warm-up cache: ask the root agent to refresh interfaces now.
+if [ -d /run/hanauta-wireguard-agent ]; then
+  cat > /run/hanauta-wireguard-agent/request.json <<EOF
+{"request_id":"install-refresh","action":"list_interfaces","interface":"","requested_at":$(date +%s)}
+EOF
+fi
+
 echo "Installed and enabled: $UNIT_NAME, $AGENT_UNIT_NAME"
+echo "Status checks:"
+systemctl --no-pager --full -n 5 status "$UNIT_NAME" || true
+systemctl --no-pager --full -n 5 status "$AGENT_UNIT_NAME" || true
