@@ -137,6 +137,8 @@ chown root:root "$CONF_DST"
 systemctl daemon-reload
 systemctl reset-failed "$AGENT_UNIT_NAME" >/dev/null 2>&1 || true
 systemctl enable --now "$AGENT_UNIT_NAME"
+# Ensure the running process always reloads the latest script on plugin updates.
+systemctl restart "$AGENT_UNIT_NAME" >/dev/null 2>&1 || true
 systemctl reset-failed "$UNIT_NAME" >/dev/null 2>&1 || true
 # Keep autoconnect enabled, but don't block installation if it can't start now.
 systemctl enable "$UNIT_NAME" >/dev/null 2>&1 || true
