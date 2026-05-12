@@ -54,7 +54,17 @@ def link_up(iface: str) -> bool:
     if result.returncode != 0:
         return False
     text = result.stdout
-    return ' UP ' in text or '<UP,' in text
+    if " state UP " in text:
+        return True
+    if "<" in text and ">" in text:
+        try:
+            flags = text.split("<", 1)[1].split(">", 1)[0]
+            parts = [part.strip().upper() for part in flags.split(",") if part.strip()]
+            if "UP" in parts:
+                return True
+        except Exception:
+            pass
+    return False
 
 
 def run_cmd(cmd: list[str]) -> tuple[bool, str]:

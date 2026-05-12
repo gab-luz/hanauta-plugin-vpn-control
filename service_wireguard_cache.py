@@ -68,7 +68,18 @@ def _wireguard_status(iface: str) -> str:
         return "off"
     if result.returncode != 0:
         return "off"
-    return "on" if " UP " in result.stdout or "<UP," in result.stdout else "off"
+    text = result.stdout
+    if " state UP " in text:
+        return "on"
+    if "<" in text and ">" in text:
+        try:
+            flags = text.split("<", 1)[1].split(">", 1)[0]
+            parts = [part.strip().upper() for part in flags.split(",") if part.strip()]
+            if "UP" in parts:
+                return "on"
+        except Exception:
+            pass
+    return "off"
 
 
 def main() -> int:
