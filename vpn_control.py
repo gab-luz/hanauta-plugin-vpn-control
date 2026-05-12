@@ -1419,7 +1419,7 @@ class VpnControlPopup(QWidget):
         selected = (
             status.get("wg_selected", "")
             or str(service.get("preferred_interface", "")).strip()
-            or ("wg0" if "wg0" in interfaces else (interfaces[0] if interfaces else ""))
+            or (interfaces[0] if interfaces else "")
         )
         active = status.get("wireguard") == "on"
 
@@ -1473,13 +1473,11 @@ class VpnControlPopup(QWidget):
         if self._building_switch:
             return
         iface = self.interface_combo.currentText().strip()
-        if enabled and not iface:
-            iface = "wg0"
         if iface:
             save_vpn_service_setting("preferred_interface", iface)
         save_vpn_service_setting("reconnect_on_login", bool(enabled))
         self.footer_label.setText(
-            f"{iface or 'wg0'} will be enabled on session start."
+            f"{iface or 'Selected interface'} will be enabled on session start."
             if enabled
             else "Automatic WireGuard startup disabled."
         )

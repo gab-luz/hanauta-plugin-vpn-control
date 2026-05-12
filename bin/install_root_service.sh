@@ -82,7 +82,13 @@ if uid_text.isdigit():
 print(iface)
 PY
 )"
-iface="${iface:-wg0}"
+# Do not assume wg0; keep empty if user has not selected any interface yet.
+if [ -z "$iface" ] && [ -d /etc/wireguard ]; then
+  first_conf="$(find /etc/wireguard -maxdepth 1 -type f -name '*.conf' | sort | head -n 1 || true)"
+  if [ -n "$first_conf" ]; then
+    iface="$(basename "$first_conf" .conf)"
+  fi
+fi
 user_home="$(python3 - <<PY
 import os
 import pwd
@@ -100,7 +106,7 @@ user_home="${user_home:-$HOME}"
 python3 - <<PY
 from pathlib import Path
 conf = Path("$CONF_DST")
-iface = "$iface".strip() or "wg0"
+iface = "$iface".strip()
 home = "$user_home".strip()
 data = {}
 if conf.exists():
@@ -110,7 +116,7 @@ if conf.exists():
             continue
         k, v = line.split("=", 1)
         data[k.strip()] = v.strip()
-data["WG_IFACE"] = data.get("WG_IFACE", iface) or iface
+data["WG_IFACE"] = data.get("WG_IFACE", iface).strip()
 data["HANAUTA_USER_HOME"] = home
 conf.write_text(
     "WG_IFACE={}\\nHANAUTA_USER_HOME={}\\n".format(

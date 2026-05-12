@@ -1,3 +1,4 @@
 # Which WireGuard interface (config) to bring up at boot.
-# Example: WG_IFACE=wg0 uses /etc/wireguard/wg0.conf
-WG_IFACE=wg0
+# Example: WG_IFACE=myvpn uses /etc/wireguard/myvpn.conf
+# Leave empty to disable autoconnect until interface is selected in plugin UI.
+WG_IFACE=
