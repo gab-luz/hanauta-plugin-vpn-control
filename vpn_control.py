@@ -14,6 +14,7 @@ import subprocess
 import sys
 import time
 import uuid
+import traceback
 from pathlib import Path
 
 from PyQt6.QtCore import QThread, Qt, QTimer, QSize, QStringListModel, pyqtSignal
@@ -63,6 +64,7 @@ STATE_DIR = Path.home() / ".local" / "state" / "hanauta" / "notification-center"
 SETTINGS_FILE = STATE_DIR / "settings.json"
 SERVICE_STATE_DIR = Path.home() / ".local" / "state" / "hanauta" / "service"
 VPN_CACHE_FILE = SERVICE_STATE_DIR / "plugins" / "vpn_control_wireguard.json"
+VPN_LOG_FILE = STATE_DIR / "vpn_control.log"
 WG_AGENT_RUN_DIR = Path("/run/hanauta-wireguard-agent")
 WG_AGENT_REQUEST_FILE = WG_AGENT_RUN_DIR / "request.json"
 WG_AGENT_RESPONSE_FILE = WG_AGENT_RUN_DIR / "response.json"
@@ -236,6 +238,15 @@ def wireguard_service_request(
             continue
         return response
     return {"ok": False, "message": "Timed out waiting for Hanauta WireGuard root agent."}
+
+
+def append_log(message: str) -> None:
+    try:
+        STATE_DIR.mkdir(parents=True, exist_ok=True)
+        with VPN_LOG_FILE.open("a", encoding="utf-8") as handle:
+            handle.write(f"{time.strftime('%Y-%m-%d %H:%M:%S')} {message}\n")
+    except Exception:
+        pass
 
 
 def material_icon(name: str) -> str:
@@ -1717,7 +1728,15 @@ class VpnControlPopup(QWidget):
 
 
 def main() -> int:
+    def _log_excepthook(exc_type, exc, tb) -> None:
+        append_log("Unhandled exception in vpn_control.py")
+        append_log("".join(traceback.format_exception(exc_type, exc, tb)).strip())
+        sys.__excepthook__(exc_type, exc, tb)
+
+    sys.excepthook = _log_excepthook
+    append_log(f"Starting popup from {PLUGIN_ROOT}")
     if not service_enabled():
+        append_log("Service disabled in settings. Exiting popup.")
         return 0
     app = QApplication(sys.argv)
     app.setQuitOnLastWindowClosed(True)

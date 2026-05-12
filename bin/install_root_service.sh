@@ -34,6 +34,28 @@ if ! command -v wg-quick >/dev/null 2>&1; then
   exit 4
 fi
 
+ensure_resolvconf() {
+  if command -v resolvconf >/dev/null 2>&1; then
+    return 0
+  fi
+  echo "[INFO] resolvconf not found; installing runtime dependency..."
+  if command -v pacman >/dev/null 2>&1; then
+    pacman -Sy --noconfirm openresolv >/dev/null 2>&1 || true
+  elif command -v apt-get >/dev/null 2>&1; then
+    apt-get update -qq >/dev/null 2>&1 || true
+    apt-get install -y openresolv >/dev/null 2>&1 || apt-get install -y resolvconf >/dev/null 2>&1 || true
+  elif command -v dnf >/dev/null 2>&1; then
+    dnf -y install openresolv >/dev/null 2>&1 || true
+  elif command -v zypper >/dev/null 2>&1; then
+    zypper --non-interactive install openresolv >/dev/null 2>&1 || true
+  fi
+  if ! command -v resolvconf >/dev/null 2>&1; then
+    echo "[WARN] resolvconf is still unavailable. wg-quick may fail until dependency is installed." >&2
+  fi
+}
+
+ensure_resolvconf
+
 install -D -m 0644 "$UNIT_SRC" "$UNIT_DST"
 install -D -m 0755 "$AGENT_SCRIPT_SRC" "$AGENT_SCRIPT_DST"
 sed "s|@AGENT_SCRIPT@|$AGENT_SCRIPT_DST|g" "$AGENT_UNIT_SRC" > "$AGENT_UNIT_DST"
