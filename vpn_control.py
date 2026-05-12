@@ -1466,7 +1466,11 @@ class VpnControlPopup(QWidget):
         if self._building_combo or not iface:
             return
         save_vpn_service_setting("preferred_interface", iface)
-        run_script_bg("vpn.sh", "--set-wg", iface)
+        response = wireguard_service_request("set_interface", interface=iface, timeout=6.0)
+        if not bool(response.get("ok", False)):
+            self.footer_label.setText(str(response.get("message", "Failed to select interface in Hanauta service.")))
+        else:
+            self.footer_label.setText(f"Selected interface: {iface}")
         QTimer.singleShot(250, self.refresh_state)
 
     def _toggle_auto_start(self, enabled: bool) -> None:

@@ -116,7 +116,13 @@ if conf.exists():
             continue
         k, v = line.split("=", 1)
         data[k.strip()] = v.strip()
-data["WG_IFACE"] = data.get("WG_IFACE", iface).strip()
+selected = data.get("WG_IFACE", iface).strip()
+if selected:
+    import pathlib
+    conf_path = pathlib.Path("/etc/wireguard") / f"{selected}.conf"
+    if not conf_path.exists():
+        selected = iface
+data["WG_IFACE"] = selected
 data["HANAUTA_USER_HOME"] = home
 conf.write_text(
     "WG_IFACE={}\\nHANAUTA_USER_HOME={}\\n".format(

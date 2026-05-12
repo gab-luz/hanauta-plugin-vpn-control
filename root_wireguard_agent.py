@@ -28,6 +28,14 @@ def load_conf() -> dict[str, str]:
     return data
 
 
+def save_conf(data: dict[str, str]) -> None:
+    lines = [
+        f"WG_IFACE={data.get('WG_IFACE', '').strip()}",
+        f"HANAUTA_USER_HOME={data.get('HANAUTA_USER_HOME', '').strip()}",
+    ]
+    CONF_FILE.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
 def home_dir() -> Path:
     conf = load_conf()
     home = conf.get('HANAUTA_USER_HOME', '').strip()
@@ -85,6 +93,9 @@ def write_cache(selected: str | None = None) -> dict[str, object]:
     chosen = (selected or '').strip() or preferred
     if chosen not in ifaces:
         chosen = ifaces[0] if ifaces else ''
+    if chosen != preferred:
+        conf['WG_IFACE'] = chosen
+        save_conf(conf)
     payload = {
         'wireguard': 'on' if link_up(chosen) else 'off',
         'wg_selected': chosen,
@@ -103,6 +114,16 @@ def handle_request(req: dict[str, object]) -> dict[str, object]:
     if action == 'list_interfaces':
         payload = write_cache(selected=iface)
         return {'ok': True, 'message': 'interfaces refreshed', 'payload': payload, 'request_id': request_id}
+    if action == 'set_interface':
+        conf = load_conf()
+        ifaces = list_ifaces()
+        if iface and iface in ifaces:
+            conf['WG_IFACE'] = iface
+            save_conf(conf)
+            payload = write_cache(selected=iface)
+            return {'ok': True, 'message': f'Selected interface: {iface}', 'payload': payload, 'request_id': request_id}
+        payload = write_cache()
+        return {'ok': False, 'message': 'Selected interface is not available.', 'payload': payload, 'request_id': request_id}
     if action == 'toggle':
         if not iface:
             payload = write_cache()
