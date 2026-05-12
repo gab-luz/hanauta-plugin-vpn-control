@@ -38,8 +38,7 @@ install -D -m 0644 "$UNIT_SRC" "$UNIT_DST"
 install -D -m 0755 "$AGENT_SCRIPT_SRC" "$AGENT_SCRIPT_DST"
 sed "s|@AGENT_SCRIPT@|$AGENT_SCRIPT_DST|g" "$AGENT_UNIT_SRC" > "$AGENT_UNIT_DST"
 
-if [ ! -f "$CONF_DST" ]; then
-  iface="$(python3 - <<PY
+iface="$(python3 - <<PY
 import json
 import os
 import pwd
@@ -61,8 +60,8 @@ if uid_text.isdigit():
 print(iface)
 PY
 )"
-  iface="${iface:-wg0}"
-  user_home="$(python3 - <<PY
+iface="${iface:-wg0}"
+user_home="$(python3 - <<PY
 import os
 import pwd
 uid_text = str(os.environ.get("PKEXEC_UID", "")).strip()
@@ -73,10 +72,33 @@ if uid_text.isdigit():
         pass
 PY
 )"
-  user_home="${user_home:-$HOME}"
-  printf "WG_IFACE=%s\nHANAUTA_USER_HOME=%s\n" "$iface" "$user_home" > "$CONF_DST"
-  chmod 0644 "$CONF_DST"
-fi
+user_home="${user_home:-$HOME}"
+
+# Always keep HANAUTA_USER_HOME updated and preserve existing WG_IFACE when present.
+python3 - <<PY
+from pathlib import Path
+conf = Path("$CONF_DST")
+iface = "$iface".strip() or "wg0"
+home = "$user_home".strip()
+data = {}
+if conf.exists():
+    for line in conf.read_text(encoding="utf-8", errors="ignore").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        k, v = line.split("=", 1)
+        data[k.strip()] = v.strip()
+data["WG_IFACE"] = data.get("WG_IFACE", iface) or iface
+data["HANAUTA_USER_HOME"] = home
+conf.write_text(
+    "WG_IFACE={}\\nHANAUTA_USER_HOME={}\\n".format(
+        data["WG_IFACE"], data["HANAUTA_USER_HOME"]
+    ),
+    encoding="utf-8",
+)
+PY
+chmod 0644 "$CONF_DST"
+chown root:root "$CONF_DST"
 
 systemctl daemon-reload
 systemctl reset-failed "$AGENT_UNIT_NAME" >/dev/null 2>&1 || true

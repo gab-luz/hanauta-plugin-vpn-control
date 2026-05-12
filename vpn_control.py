@@ -912,6 +912,7 @@ class VpnControlPopup(QWidget):
         self._build_ui()
         self._apply_styles()
         self.refresh_state()
+        self.footer_label.setText(f"Plugin source: {PLUGIN_ROOT}")
 
         self.poll_timer = QTimer(self)
         self.poll_timer.timeout.connect(self.refresh_state)
@@ -1358,7 +1359,10 @@ class VpnControlPopup(QWidget):
         if bool(response.get("ok", False)):
             self.footer_label.setText("WireGuard configs refreshed.")
         else:
-            self.footer_label.setText(str(response.get("message", "Failed to refresh WireGuard configs.")))
+            msg = str(response.get("message", "Failed to refresh WireGuard configs."))
+            self.footer_label.setText(
+                f"{msg} Reinstall VPN plugin from Marketplace to repair root agent."
+            )
         self.refresh_state()
 
     def _load_status(self) -> dict[str, str]:
