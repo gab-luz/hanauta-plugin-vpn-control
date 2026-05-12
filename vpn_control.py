@@ -221,6 +221,35 @@ def list_wireguard_interfaces_privileged() -> list[str]:
     return [line.strip() for line in result.stdout.splitlines() if line.strip()]
 
 
+def resolvconf_install_plan() -> tuple[list[str], str] | None:
+    if shutil.which("pacman"):
+        return (
+            ["pkexec", "pacman", "-Sy", "--noconfirm", "openresolv"],
+            "Será instalado o pacote `openresolv` via pacman com privilégios de root.",
+        )
+    if shutil.which("apt-get"):
+        return (
+            [
+                "pkexec",
+                "bash",
+                "-lc",
+                "apt-get update && apt-get install -y resolvconf",
+            ],
+            "Será instalado o pacote `resolvconf` via apt com privilégios de root.",
+        )
+    if shutil.which("dnf"):
+        return (
+            ["pkexec", "dnf", "-y", "install", "openresolv"],
+            "Será instalado o pacote `openresolv` via dnf com privilégios de root.",
+        )
+    if shutil.which("zypper"):
+        return (
+            ["pkexec", "zypper", "--non-interactive", "install", "openresolv"],
+            "Será instalado o pacote `openresolv` via zypper com privilégios de root.",
+        )
+    return None
+
+
 def material_icon(name: str) -> str:
     return MATERIAL_ICONS.get(name, "?")
 
@@ -1767,6 +1796,9 @@ class VpnControlPopup(QWidget):
         self.refresh_state()
         self.interface_combo.setEnabled(bool(self.interface_combo.count()))
         if not ok:
+            lowered = message.lower()
+            if "resolvconf" in lowered and "not found" in lowered:
+                self._prompt_install_resolvconf()
             self.state_chip.setProperty("state", "error")
             self._set_state_icon(VPN_ICON_STATE_INACTIVE, "lock_open")
             self.state_label.setText("WireGuard command failed")
@@ -1774,6 +1806,70 @@ class VpnControlPopup(QWidget):
             self.style().unpolish(self.state_chip)
             self.style().polish(self.state_chip)
         self.toggle_button.setEnabled(bool(self.interface_combo.count()))
+
+    def _prompt_install_resolvconf(self) -> None:
+        plan = resolvconf_install_plan()
+        if plan is None:
+            QMessageBox.warning(
+                self,
+                "Missing resolvconf",
+                "Não encontrei um gerenciador de pacotes suportado para instalar `resolvconf` automaticamente.",
+            )
+            return
+        command, notice = plan
+        first = QMessageBox.question(
+            self,
+            "Install resolvconf",
+            (
+                "WireGuard falhou porque `resolvconf` não está disponível.\n\n"
+                f"{notice}\n\n"
+                "Deseja continuar?"
+            ),
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if first != QMessageBox.StandardButton.Yes:
+            self.footer_label.setText("Instalação de resolvconf cancelada pelo usuário.")
+            return
+        second = QMessageBox.question(
+            self,
+            "Confirm privileged install",
+            (
+                "Confirma novamente que deseja instalar esse pacote com acesso root?\n\n"
+                "A seguir, o Polkit pedirá sua senha."
+            ),
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if second != QMessageBox.StandardButton.Yes:
+            self.footer_label.setText("Instalação de resolvconf cancelada na segunda confirmação.")
+            return
+        try:
+            result = subprocess.run(
+                command,
+                capture_output=True,
+                text=True,
+                timeout=300.0,
+                check=False,
+            )
+        except subprocess.TimeoutExpired:
+            self.footer_label.setText("Tempo esgotado ao instalar resolvconf.")
+            return
+        except Exception as exc:
+            self.footer_label.setText(f"Falha ao instalar resolvconf: {exc}")
+            return
+        if result.returncode == 0:
+            self.footer_label.setText("resolvconf instalado. Tente ativar o túnel novamente.")
+            QMessageBox.information(
+                self,
+                "Install complete",
+                "Pacote instalado com sucesso. Agora tente conectar o WireGuard novamente.",
+            )
+            return
+        details = (result.stderr or result.stdout).strip()
+        if not details:
+            details = "A instalação falhou ou foi cancelada."
+        self.footer_label.setText(details)
 
 
 def main() -> int:
