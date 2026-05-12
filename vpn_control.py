@@ -12,6 +12,7 @@ import shlex
 import shutil
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 from PyQt6.QtCore import QThread, Qt, QTimer, QSize, QStringListModel, pyqtSignal
@@ -187,6 +188,37 @@ def load_wireguard_cache() -> dict[str, object]:
     except Exception:
         return {}
     return payload if isinstance(payload, dict) else {}
+
+
+def save_wireguard_cache(payload: dict[str, object]) -> None:
+    try:
+        VPN_CACHE_FILE.parent.mkdir(parents=True, exist_ok=True)
+        VPN_CACHE_FILE.write_text(json.dumps(payload, ensure_ascii=True), encoding="utf-8")
+    except Exception:
+        pass
+
+
+def list_wireguard_interfaces_privileged() -> list[str]:
+    if not shutil.which("pkexec"):
+        return []
+    py = (
+        "from pathlib import Path; "
+        "p=Path('/etc/wireguard'); "
+        "print('\\n'.join(sorted(x.stem for x in p.glob('*.conf') if x.stem)))"
+    )
+    try:
+        result = subprocess.run(
+            ["pkexec", "python3", "-c", py],
+            capture_output=True,
+            text=True,
+            timeout=20.0,
+            check=False,
+        )
+    except Exception:
+        return []
+    if result.returncode != 0:
+        return []
+    return [line.strip() for line in result.stdout.splitlines() if line.strip()]
 
 
 def material_icon(name: str) -> str:
@@ -886,6 +918,8 @@ class VpnControlPopup(QWidget):
         self._toggle_worker: VpnToggleWorker | None = None
         self._desktop_apps_cache: list[dict[str, str]] | None = None
         self._flatpak_apps_cache: list[dict[str, str]] | None = None
+        self._privileged_probe_attempted = False
+        self._last_privileged_probe_at = 0.0
         self._split_tunnel_apps = normalize_split_tunnel_apps(
             load_vpn_service_settings().get("split_tunnel_apps", [])
         )
@@ -1343,7 +1377,28 @@ class VpnControlPopup(QWidget):
         raw_ifaces = payload.get("interfaces", [])
         if not isinstance(raw_ifaces, list):
             return []
-        return [str(item).strip() for item in raw_ifaces if str(item).strip()]
+        interfaces = [str(item).strip() for item in raw_ifaces if str(item).strip()]
+        if interfaces:
+            return interfaces
+
+        now = time.time()
+        if self._privileged_probe_attempted and now - self._last_privileged_probe_at < 30:
+            return []
+        self._privileged_probe_attempted = True
+        self._last_privileged_probe_at = now
+        privileged = list_wireguard_interfaces_privileged()
+        if privileged:
+            cache = payload if isinstance(payload, dict) else {}
+            cache["interfaces"] = privileged
+            if not str(cache.get("wg_selected", "")).strip():
+                cache["wg_selected"] = privileged[0]
+            if str(cache.get("wireguard", "")).strip().lower() not in {"on", "off"}:
+                cache["wireguard"] = "off"
+            save_wireguard_cache(cache)
+            self.footer_label.setText(
+                "Loaded WireGuard interfaces via privileged helper."
+            )
+        return privileged
 
     def refresh_state(self) -> None:
         if self._toggle_worker is not None and self._toggle_worker.isRunning():
