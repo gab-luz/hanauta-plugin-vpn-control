@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from types import MethodType
 
 from PyQt6.QtWidgets import QPushButton
 
@@ -167,6 +168,23 @@ def _apply_vpn_runtime_state(bar) -> None:
             pass
 
 
+def _install_vpn_popup_sync_override(bar) -> None:
+    # Host bars may sync vpn_icon.active from popup-open state, which clobbers
+    # real WireGuard on/off state. Override VPN-only sync to preserve active.
+    original_sync_vpn = getattr(bar, "_sync_vpn_button", None)
+    if not callable(original_sync_vpn):
+        return
+    if bool(getattr(bar, "_vpn_sync_override_installed", False)):
+        return
+
+    def _sync_vpn_button(self) -> None:
+        original_sync_vpn()
+        _apply_vpn_runtime_state(self)
+
+    setattr(bar, "_sync_vpn_button", MethodType(_sync_vpn_button, bar))
+    setattr(bar, "_vpn_sync_override_installed", True)
+
+
 def register_hanauta_bar_plugin(bar, api: dict[str, object]) -> None:
     plugin_dir = Path(str(api.get("plugin_dir", ""))).expanduser()
     register_hook = api.get("register_hook")
@@ -180,4 +198,5 @@ def register_hanauta_bar_plugin(bar, api: dict[str, object]) -> None:
     register_hook("icons", _refresh)
     register_hook("settings_reloaded", _refresh)
     register_hook("poll", _apply_vpn_runtime_state)
+    _install_vpn_popup_sync_override(bar)
     _refresh()
