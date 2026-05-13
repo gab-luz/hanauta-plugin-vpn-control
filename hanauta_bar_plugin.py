@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 from types import MethodType
 
+from PyQt6.QtCore import QTimer
 from PyQt6.QtWidgets import QPushButton
 
 SERVICE_KEY = "vpn_control"
@@ -185,6 +186,39 @@ def _install_vpn_popup_sync_override(bar) -> None:
     setattr(bar, "_vpn_sync_override_installed", True)
 
 
+def _install_vpn_popup_launcher(bar, plugin_dir: Path) -> None:
+    script_path = plugin_dir / "vpn_control.py"
+    if not script_path.exists():
+        return
+    setattr(bar, "_vpn_control_script", script_path)
+    toggle_singleton = getattr(bar, "_toggle_singleton_process", None)
+    python_bin = getattr(bar, "_python_bin", None)
+    if not callable(toggle_singleton) or not callable(python_bin):
+        return
+    if bool(getattr(bar, "_vpn_launcher_override_installed", False)):
+        return
+
+    def _toggle_vpn_popup(self) -> None:
+        vpn_script = getattr(self, "_vpn_control_script", script_path)
+        if vpn_script is None or not Path(vpn_script).exists():
+            self.vpn_icon.setChecked(False)
+            return
+        self._toggle_singleton_process(
+            "_vpn_popup_process",
+            Path(vpn_script),
+            python_bin=self._python_bin(),
+        )
+        QTimer.singleShot(150, self._sync_vpn_button)
+
+    setattr(bar, "_toggle_vpn_popup", MethodType(_toggle_vpn_popup, bar))
+    try:
+        bar.vpn_icon.clicked.disconnect()
+    except Exception:
+        pass
+    bar.vpn_icon.clicked.connect(bar._toggle_vpn_popup)
+    setattr(bar, "_vpn_launcher_override_installed", True)
+
+
 def register_hanauta_bar_plugin(bar, api: dict[str, object]) -> None:
     plugin_dir = Path(str(api.get("plugin_dir", ""))).expanduser()
     register_hook = api.get("register_hook")
@@ -198,5 +232,6 @@ def register_hanauta_bar_plugin(bar, api: dict[str, object]) -> None:
     register_hook("icons", _refresh)
     register_hook("settings_reloaded", _refresh)
     register_hook("poll", _apply_vpn_runtime_state)
+    _install_vpn_popup_launcher(bar, plugin_dir)
     _install_vpn_popup_sync_override(bar)
     _refresh()
