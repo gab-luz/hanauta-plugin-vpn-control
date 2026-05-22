@@ -910,6 +910,7 @@ class VpnControlPopup(QWidget):
         self._building_combo = False
         self._building_switch = False
         self._toggle_worker: VpnToggleWorker | None = None
+        self._pending_quit_after_toggle = False
         self._desktop_apps_cache: list[dict[str, str]] | None = None
         self._flatpak_apps_cache: list[dict[str, str]] | None = None
         self._privileged_probe_attempted = False
@@ -950,8 +951,10 @@ class VpnControlPopup(QWidget):
 
     def closeEvent(self, event) -> None:  # type: ignore[override]
         if self._toggle_worker is not None and self._toggle_worker.isRunning():
-            self._toggle_worker.quit()
-            self._toggle_worker.wait(250)
+            self._pending_quit_after_toggle = True
+            self.hide()
+            event.ignore()
+            return
         app = QApplication.instance()
         if app is not None:
             app.quit()
@@ -1710,10 +1713,10 @@ class VpnControlPopup(QWidget):
 
         self._toggle_worker = VpnToggleWorker(iface)
         self._toggle_worker.completed.connect(self._handle_toggle_finished)
+        self._toggle_worker.finished.connect(self._cleanup_toggle_worker)
         self._toggle_worker.start()
 
     def _handle_toggle_finished(self, ok: bool, message: str) -> None:
-        self._toggle_worker = None
         self.refresh_button.setEnabled(True)
         self.refresh_text_button.setEnabled(True)
         self.footer_label.setText(message)
@@ -1727,6 +1730,15 @@ class VpnControlPopup(QWidget):
             self.style().unpolish(self.state_chip)
             self.style().polish(self.state_chip)
         self.toggle_button.setEnabled(bool(self.interface_combo.count()))
+        if self._pending_quit_after_toggle:
+            self._pending_quit_after_toggle = False
+            self.close()
+
+    def _cleanup_toggle_worker(self) -> None:
+        worker = self._toggle_worker
+        self._toggle_worker = None
+        if worker is not None:
+            worker.deleteLater()
 
 
 def main() -> int:
