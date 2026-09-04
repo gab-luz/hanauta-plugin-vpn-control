@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import time
 from pathlib import Path
 from types import MethodType
 
@@ -11,6 +12,16 @@ from PyQt6.QtWidgets import QPushButton
 SERVICE_KEY = "vpn_control"
 SERVICE_STATE_DIR = Path.home() / ".local" / "state" / "hanauta" / "service"
 VPN_CACHE_FILE = SERVICE_STATE_DIR / "plugins" / "vpn_control_wireguard.json"
+VPN_LOG_FILE = Path.home() / ".local" / "state" / "hanauta" / "notification-center" / "vpn_control.log"
+
+
+def _log(message: str) -> None:
+    try:
+        VPN_LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
+        with VPN_LOG_FILE.open("a", encoding="utf-8") as handle:
+            handle.write(f"{time.strftime('%Y-%m-%d %H:%M:%S')} [bar-plugin] {message}\n")
+    except Exception:
+        pass
 
 SETTINGS_FILE = (
     Path.home()
@@ -189,25 +200,33 @@ def _install_vpn_popup_sync_override(bar) -> None:
 def _install_vpn_popup_launcher(bar, plugin_dir: Path) -> None:
     script_path = plugin_dir / "vpn_control.py"
     if not script_path.exists():
+        _log(f"Popup launcher not installed: script missing at {script_path}")
         return
     setattr(bar, "_vpn_control_script", script_path)
     toggle_singleton = getattr(bar, "_toggle_singleton_process", None)
     python_bin = getattr(bar, "_python_bin", None)
     if not callable(toggle_singleton) or not callable(python_bin):
+        _log("Popup launcher not installed: host bar missing _toggle_singleton_process or _python_bin")
         return
     if bool(getattr(bar, "_vpn_launcher_override_installed", False)):
+        _log("Popup launcher already installed; skipping duplicate install")
         return
 
     def _toggle_vpn_popup(self) -> None:
         vpn_script = getattr(self, "_vpn_control_script", script_path)
+        _log(f"Bar requested popup toggle; script={vpn_script}")
         if vpn_script is None or not Path(vpn_script).exists():
+            _log("Popup toggle aborted: vpn_control.py missing at runtime")
             self.vpn_icon.setChecked(False)
             return
+        pybin = self._python_bin()
+        _log(f"Invoking singleton popup process with python={pybin}")
         self._toggle_singleton_process(
             "_vpn_popup_process",
             Path(vpn_script),
-            python_bin=self._python_bin(),
+            python_bin=pybin,
         )
+        _log("Singleton popup invocation submitted")
         QTimer.singleShot(150, self._sync_vpn_button)
 
     setattr(bar, "_toggle_vpn_popup", MethodType(_toggle_vpn_popup, bar))
@@ -217,6 +236,7 @@ def _install_vpn_popup_launcher(bar, plugin_dir: Path) -> None:
         pass
     bar.vpn_icon.clicked.connect(bar._toggle_vpn_popup)
     setattr(bar, "_vpn_launcher_override_installed", True)
+    _log(f"Popup launcher installed successfully; script={script_path}")
 
 
 def register_hanauta_bar_plugin(bar, api: dict[str, object]) -> None:

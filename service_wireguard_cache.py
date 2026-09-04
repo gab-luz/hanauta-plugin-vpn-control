@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import os
 import subprocess
+import time
 from pathlib import Path
 
 SETTINGS_FILE = (
@@ -15,6 +16,9 @@ SETTINGS_FILE = (
     / "settings.json"
 )
 WG_CONF_DIR = Path("/etc/wireguard")
+WG_AGENT_RUN_DIR = Path("/run/hanauta-wireguard-agent")
+WG_AGENT_REQUEST_FILE = WG_AGENT_RUN_DIR / "request.json"
+WG_AGENT_RESPONSE_FILE = WG_AGENT_RUN_DIR / "response.json"
 
 
 def _service_state_dir() -> Path:
@@ -82,14 +86,51 @@ def _wireguard_status(iface: str) -> str:
     return "off"
 
 
+def _request_split_tunnel_status() -> dict:
+    if not WG_AGENT_RUN_DIR.exists():
+        return {}
+    request_id = f"status-{int(time.time() * 1000)}"
+    payload = {
+        "request_id": request_id,
+        "action": "get_split_status",
+        "interface": "",
+        "requested_at": time.time(),
+    }
+    try:
+        WG_AGENT_REQUEST_FILE.write_text(
+            json.dumps(payload, ensure_ascii=True), encoding="utf-8"
+        )
+    except Exception:
+        return {}
+
+    deadline = time.time() + 3.0
+    while time.time() < deadline:
+        try:
+            raw = WG_AGENT_RESPONSE_FILE.read_text(encoding="utf-8")
+            response = json.loads(raw)
+        except Exception:
+            time.sleep(0.1)
+            continue
+        if not isinstance(response, dict):
+            time.sleep(0.1)
+            continue
+        if str(response.get("request_id", "")).strip() != request_id:
+            time.sleep(0.1)
+            continue
+        return response.get("status", {})
+    return {}
+
+
 def main() -> int:
     interfaces = _list_wireguard_configs()
     preferred = _selected_from_settings()
     selected = preferred if preferred in interfaces else (interfaces[0] if interfaces else "")
+    split_status = _request_split_tunnel_status()
     payload = {
         "wireguard": _wireguard_status(selected),
         "wg_selected": selected,
         "interfaces": interfaces,
+        "split_tunnel": split_status,
     }
     cache_path = _cache_path()
     cache_path.parent.mkdir(parents=True, exist_ok=True)

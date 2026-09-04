@@ -12,6 +12,13 @@ RUN_DIR = Path('/run/hanauta-wireguard-agent')
 REQUEST_FILE = RUN_DIR / 'request.json'
 RESPONSE_FILE = RUN_DIR / 'response.json'
 
+# Split tunnel support
+try:
+    from split_tunnel import handle_split_tunnel_request, get_split_tunnel_manager
+except Exception:
+    handle_split_tunnel_request = None
+    get_split_tunnel_manager = None
+
 
 def load_conf() -> dict[str, str]:
     data: dict[str, str] = {}
@@ -86,6 +93,35 @@ def run_cmd(cmd: list[str]) -> tuple[bool, str]:
     return ok, (out or err or ('ok' if ok else 'failed'))
 
 
+def systemd_active(unit: str) -> bool:
+    ok, _ = run_cmd(['systemctl', 'is-active', unit])
+    return ok
+
+
+def toggle_link(iface: str) -> tuple[bool, str]:
+    unit = f'wg-quick@{iface}.service'
+    was_up = link_up(iface)
+
+    if was_up:
+        if systemd_active(unit):
+            run_cmd(['systemctl', 'stop', unit])
+        if link_up(iface):
+            ok, msg = run_cmd(['wg-quick', 'down', iface])
+            if get_split_tunnel_manager:
+                mgr = get_split_tunnel_manager()
+                mgr.on_tunnel_disconnected()
+            return ok, msg
+        return True, f'WireGuard {iface} stopped.'
+
+    run_cmd(['systemctl', 'start', unit])
+    if link_up(iface):
+        if get_split_tunnel_manager:
+            mgr = get_split_tunnel_manager()
+            mgr.on_tunnel_connected(iface)
+        return True, f'WireGuard {iface} started.'
+    return run_cmd(['wg-quick', 'up', iface])
+
+
 def write_cache(selected: str | None = None) -> dict[str, object]:
     ifaces = list_ifaces()
     conf = load_conf()
@@ -96,10 +132,20 @@ def write_cache(selected: str | None = None) -> dict[str, object]:
     if chosen != preferred:
         conf['WG_IFACE'] = chosen
         save_conf(conf)
+
+    split_status = {}
+    if get_split_tunnel_manager:
+        try:
+            mgr = get_split_tunnel_manager()
+            split_status = mgr.get_status()
+        except Exception:
+            pass
+
     payload = {
         'wireguard': 'on' if link_up(chosen) else 'off',
         'wg_selected': chosen,
         'interfaces': ifaces,
+        'split_tunnel': split_status,
     }
     path = cache_file()
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -132,10 +178,31 @@ def handle_request(req: dict[str, object]) -> dict[str, object]:
             return {'ok': False, 'message': 'No WireGuard interface selected.', 'request_id': request_id}
         if link_up(iface):
             ok, msg = run_cmd(['wg-quick', 'down', iface])
+            if get_split_tunnel_manager:
+                mgr = get_split_tunnel_manager()
+                mgr.on_tunnel_disconnected()
         else:
             ok, msg = run_cmd(['wg-quick', 'up', iface])
+            if ok and get_split_tunnel_manager:
+                mgr = get_split_tunnel_manager()
+                mgr.on_tunnel_connected(iface)
         payload = write_cache(selected=iface)
         return {'ok': ok, 'message': msg, 'payload': payload, 'request_id': request_id}
+
+    # Split tunnel actions
+    split_actions = {
+        'enable_split_tunnel',
+        'disable_split_tunnel',
+        'on_tunnel_connected',
+        'on_tunnel_disconnected',
+        'set_split_config',
+        'get_split_status',
+    }
+    if action in split_actions:
+        if not handle_split_tunnel_request:
+            return {'ok': False, 'message': 'Split tunnel module not available', 'request_id': request_id}
+        return handle_split_tunnel_request(action, req)
+
     return {'ok': False, 'message': f'Unknown action: {action}', 'request_id': request_id}
 
 

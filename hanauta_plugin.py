@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import sys
+import time
 from pathlib import Path
 
 from PyQt6.QtCore import Qt
@@ -11,12 +12,22 @@ from PyQt6.QtWidgets import QLabel, QPushButton, QVBoxLayout, QWidget
 PLUGIN_ROOT = Path(__file__).resolve().parent
 VPN_POPUP = PLUGIN_ROOT / "vpn_control.py"
 SERVICE_KEY = "vpn_control"
+VPN_LOG_FILE = Path.home() / ".local" / "state" / "hanauta" / "notification-center" / "vpn_control.log"
 
 DEFAULT_SERVICE = {
     "enabled": True,
     "show_in_notification_center": False,
     "show_in_bar": False,
 }
+
+
+def _log(message: str) -> None:
+    try:
+        VPN_LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
+        with VPN_LOG_FILE.open("a", encoding="utf-8") as handle:
+            handle.write(f"{time.strftime('%Y-%m-%d %H:%M:%S')} [settings-plugin] {message}\n")
+    except Exception:
+        pass
 
 
 def _save_settings(window) -> None:
@@ -45,7 +56,9 @@ def _service_state(window) -> dict[str, object]:
 
 def _launch_vpn_popup(window, api: dict[str, object]) -> None:
     status = getattr(window, "vpn_plugin_status", None)
+    _log("Open WireGuard popup button clicked from settings")
     if not VPN_POPUP.exists():
+        _log(f"Popup open aborted: missing {VPN_POPUP}")
         if isinstance(status, QLabel):
             status.setText("vpn_control.py not found in plugin folder.")
         return
@@ -56,16 +69,22 @@ def _launch_vpn_popup(window, api: dict[str, object]) -> None:
     if callable(entry_command):
         try:
             command = list(entry_command(VPN_POPUP))
+            _log(f"entry_command resolved to: {command}")
         except Exception:
+            _log("entry_command raised exception; falling back to python3 launcher")
             command = []
     if not command:
         command = ["python3", str(VPN_POPUP)]
+        _log(f"Using fallback launcher command: {command}")
 
     if callable(run_bg):
         try:
             run_bg(command)
+            _log("run_bg command submitted successfully")
         except Exception:
-            pass
+            _log("run_bg raised exception while launching popup")
+    else:
+        _log("run_bg API unavailable; popup command not executed")
 
     if isinstance(status, QLabel):
         status.setText("WireGuard popup opened.")

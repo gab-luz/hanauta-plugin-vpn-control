@@ -9,5 +9,13 @@ ExecStart=/usr/bin/env python3 @AGENT_SCRIPT@
 Restart=always
 RestartSec=1
 
+# Capabilities required for split tunneling:
+# CAP_NET_ADMIN - nftables, ip route, ip rule
+# CAP_SYS_ADMIN - cgroups v2 (mkdir, write to cgroup.procs)
+# CAP_DAC_OVERRIDE - read /proc/*/exe, /proc/*/cmdline
+# CAP_SYS_RESOURCE - override resource limits for cgroups
+CapabilityBoundingSet=CAP_NET_ADMIN CAP_SYS_ADMIN CAP_DAC_OVERRIDE CAP_SYS_RESOURCE
+AmbientCapabilities=CAP_NET_ADMIN CAP_SYS_ADMIN CAP_DAC_OVERRIDE CAP_SYS_RESOURCE
+
 [Install]
 WantedBy=multi-user.target

@@ -34,6 +34,82 @@ if ! command -v wg-quick >/dev/null 2>&1; then
   exit 4
 fi
 
+# ----------------------------------------------------------------------
+# Resolve the real hanauta user regardless of how this script is invoked.
+# pkexec sets PKEXEC_UID, sudo sets SUDO_UID/SUDO_USER.
+# ----------------------------------------------------------------------
+resolve_user_uid() {
+  if [ -n "${PKEXEC_UID:-}" ] && [ "${PKEXEC_UID:-0}" -gt 1000 ] 2>/dev/null; then
+    echo "$PKEXEC_UID"
+  elif [ -n "${SUDO_UID:-}" ] && [ "${SUDO_UID:-0}" -gt 1000 ] 2>/dev/null; then
+    echo "$SUDO_UID"
+  elif [ -n "${SUDO_USER:-}" ]; then
+    id -u "$SUDO_USER" 2>/dev/null || true
+  fi
+}
+
+resolve_user_home() {
+  local uid_text home dir
+  uid_text="$(resolve_user_uid)"
+  if [ -n "$uid_text" ]; then
+    home="$(getent passwd "$uid_text" 2>/dev/null | cut -d: -f6)"
+    if [ -n "$home" ] && [ -d "$home" ]; then
+      echo "$home"
+      return 0
+    fi
+  fi
+  # Fallback: any home with an existing hanauta install.
+  for dir in /home/*; do
+    if [ -d "$dir/.config/i3/hanauta" ] || [ -d "$dir/.config/i3/hanauta/src" ]; then
+      echo "$dir"
+      return 0
+    fi
+  done
+  echo "${HOME:-/root}"
+}
+
+# ----------------------------------------------------------------------
+# Interface discovery. Never guesses/hardcodes a tunnel name.
+# Priority: settings preferred_interface -> first /etc/wireguard conf ->
+# already-enabled wg-quick@ instance.
+# ----------------------------------------------------------------------
+settings_preferred_iface() {
+  local home="$1"
+  local settings
+  [ -n "$home" ] || return 0
+  settings="$home/.local/state/hanauta/notification-center/settings.json"
+  [ -f "$settings" ] || return 0
+  python3 - "$settings" <<'PY'
+import json
+import sys
+
+try:
+    with open(sys.argv[1], encoding="utf-8") as handle:
+        payload = json.load(handle)
+except Exception:
+    raise SystemExit(0)
+services = payload.get("services", {}) if isinstance(payload, dict) else {}
+vpn = services.get("vpn_control", {}) if isinstance(services, dict) else {}
+iface = str(vpn.get("preferred_interface", "")).strip()
+if iface:
+    print(iface)
+PY
+}
+
+first_wg_conf() {
+  [ -d /etc/wireguard ] || return 0
+  local first_conf
+  first_conf="$(find /etc/wireguard -maxdepth 1 -type f -name '*.conf' 2>/dev/null | sort | head -n 1 || true)"
+  if [ -n "$first_conf" ]; then
+    basename "$first_conf" .conf
+  fi
+}
+
+enabled_wgquick_iface() {
+  systemctl list-unit-files 'wg-quick@*.service' --no-legend 2>/dev/null \
+    | awk '$2 == "enabled" { sub(/^wg-quick@/, ""); sub(/\.service$/, ""); print; exit }'
+}
+
 ensure_resolvconf() {
   if command -v resolvconf >/dev/null 2>&1; then
     return 0
@@ -54,78 +130,47 @@ ensure_resolvconf() {
   fi
 }
 
+user_home="$(resolve_user_home)"
+runtime_uid="$(resolve_user_uid)"
+runtime_user="$(getent passwd "$runtime_uid" 2>/dev/null | cut -d: -f1 || true)"
+
+iface="$(settings_preferred_iface "$user_home")"
+if [ -z "$iface" ]; then
+  iface="$(first_wg_conf)"
+fi
+if [ -z "$iface" ]; then
+  iface="$(enabled_wgquick_iface)"
+fi
+
 ensure_resolvconf
 
 install -D -m 0644 "$UNIT_SRC" "$UNIT_DST"
 install -D -m 0755 "$AGENT_SCRIPT_SRC" "$AGENT_SCRIPT_DST"
 sed "s|@AGENT_SCRIPT@|$AGENT_SCRIPT_DST|g" "$AGENT_UNIT_SRC" > "$AGENT_UNIT_DST"
 
-iface="$(python3 - <<PY
-import json
-import os
-import pwd
-from pathlib import Path
-
-iface = ""
-uid_text = str(os.environ.get("PKEXEC_UID", "")).strip()
-if uid_text.isdigit():
-    try:
-        home = Path(pwd.getpwuid(int(uid_text)).pw_dir)
-        settings = home / ".local" / "state" / "hanauta" / "notification-center" / "settings.json"
-        if settings.exists():
-            payload = json.loads(settings.read_text(encoding="utf-8"))
-            services = payload.get("services", {}) if isinstance(payload, dict) else {}
-            vpn = services.get("vpn_control", {}) if isinstance(services, dict) else {}
-            iface = str(vpn.get("preferred_interface", "")).strip()
-    except Exception:
-        iface = ""
-print(iface)
-PY
-)"
-# Do not assume wg0; keep empty if user has not selected any interface yet.
-if [ -z "$iface" ] && [ -d /etc/wireguard ]; then
-  first_conf="$(find /etc/wireguard -maxdepth 1 -type f -name '*.conf' | sort | head -n 1 || true)"
-  if [ -n "$first_conf" ]; then
-    iface="$(basename "$first_conf" .conf)"
-  fi
-fi
-user_home="$(python3 - <<PY
-import os
-import pwd
-uid_text = str(os.environ.get("PKEXEC_UID", "")).strip()
-if uid_text.isdigit():
-    try:
-        print(pwd.getpwuid(int(uid_text)).pw_dir)
-    except Exception:
-        pass
-PY
-)"
-user_home="${user_home:-$HOME}"
-
 # Always keep HANAUTA_USER_HOME updated and preserve existing WG_IFACE when present.
-python3 - <<PY
+python3 - "$CONF_DST" "$iface" "$user_home" <<'PY'
+import sys
 from pathlib import Path
-conf = Path("$CONF_DST")
-iface = "$iface".strip()
-home = "$user_home".strip()
+
+conf_path = Path(sys.argv[1])
+iface = sys.argv[2].strip()
+home = sys.argv[3].strip()
 data = {}
-if conf.exists():
-    for line in conf.read_text(encoding="utf-8", errors="ignore").splitlines():
+if conf_path.exists():
+    for line in conf_path.read_text(encoding="utf-8", errors="ignore").splitlines():
         line = line.strip()
         if not line or line.startswith("#") or "=" not in line:
             continue
-        k, v = line.split("=", 1)
-        data[k.strip()] = v.strip()
+        key, value = line.split("=", 1)
+        data[key.strip()] = value.strip()
 selected = data.get("WG_IFACE", iface).strip()
-if selected:
-    import pathlib
-    conf_path = pathlib.Path("/etc/wireguard") / f"{selected}.conf"
-    if not conf_path.exists():
-        selected = iface
+if selected and not (Path("/etc/wireguard") / f"{selected}.conf").exists():
+    selected = iface
 data["WG_IFACE"] = selected
 data["HANAUTA_USER_HOME"] = home
-conf.write_text(
-    "WG_IFACE={}\\nHANAUTA_USER_HOME={}\\n".format(
+conf_path.write_text(
+    "WG_IFACE={}\nHANAUTA_USER_HOME={}\n".format(
         data["WG_IFACE"], data["HANAUTA_USER_HOME"]
     ),
     encoding="utf-8",
@@ -139,18 +184,19 @@ systemctl reset-failed "$AGENT_UNIT_NAME" >/dev/null 2>&1 || true
 systemctl enable --now "$AGENT_UNIT_NAME"
 # Ensure the running process always reloads the latest script on plugin updates.
 systemctl restart "$AGENT_UNIT_NAME" >/dev/null 2>&1 || true
-systemctl reset-failed "$UNIT_NAME" >/dev/null 2>&1 || true
-# Keep autoconnect enabled, but don't block installation if it can't start now.
-systemctl enable "$UNIT_NAME" >/dev/null 2>&1 || true
-systemctl start "$UNIT_NAME" >/dev/null 2>&1 || true
+
+# If the user already manages the tunnel with the native wg-quick@ unit,
+# let systemd own boot autostart and skip the hanauta autoconnect unit.
+if [ -n "$iface" ] && systemctl is-enabled --quiet "wg-quick@${iface}.service" 2>/dev/null; then
+  echo "[INFO] wg-quick@${iface}.service is already enabled; boot autostart stays with systemd."
+  systemctl disable "$UNIT_NAME" >/dev/null 2>&1 || true
+else
+  systemctl reset-failed "$UNIT_NAME" >/dev/null 2>&1 || true
+  systemctl enable "$UNIT_NAME" >/dev/null 2>&1 || true
+  systemctl start "$UNIT_NAME" >/dev/null 2>&1 || true
+fi
 
 systemctl is-active --quiet "$AGENT_UNIT_NAME"
-
-runtime_uid="${PKEXEC_UID:-}"
-runtime_user="${SUDO_USER:-}"
-if [ -z "$runtime_user" ] && [ -n "$runtime_uid" ]; then
-  runtime_user="$(getent passwd "$runtime_uid" | cut -d: -f1 || true)"
-fi
 
 if [ -n "$runtime_uid" ] && [ -n "$runtime_user" ]; then
   # Best effort: refresh the user hanauta-service cache right after install.
@@ -165,7 +211,13 @@ if [ -d /run/hanauta-wireguard-agent ]; then
 EOF
 fi
 
-echo "Installed and enabled: $UNIT_NAME, $AGENT_UNIT_NAME"
+echo "Installed and enabled: $AGENT_UNIT_NAME"
+if [ -n "$iface" ]; then
+  echo "WireGuard interface: $iface"
+else
+  echo "WireGuard interface: (none detected; pick one from the Hanauta VPN popup)"
+fi
+echo "Hanauta user home: $user_home"
 echo "Status checks:"
 systemctl --no-pager --full -n 5 status "$AGENT_UNIT_NAME" || true
 systemctl --no-pager --full -n 5 status "$UNIT_NAME" || true
