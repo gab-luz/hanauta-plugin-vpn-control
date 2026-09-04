@@ -52,11 +52,24 @@ UI (vpn_control.py)
 - cgroups v2 mounted (`/sys/fs/cgroup`)
 - systemd
 
+### Package Management (uv)
+```bash
+# Install uv if not available
+curl -LsSf https://astral.sh/uv/install.sh | sh
+
+# Create virtual environment and install dependencies
+uv venv
+uv pip install -e ".[dev]"
+
+# Or for production
+uv pip install -e .
+```
+
 ### Running Locally
 ```bash
 # From project root
-cd /mnt/outros/DEV/hanauta-plugin-vpn-control
-/mnt/outros/DEV/hanauta/.venv/bin/python3 vpn_control.py
+cd hanauta-plugin-vpn-control
+uv run python vpn_control.py
 ```
 
 ### Install Root Service (requires sudo/pkexec)

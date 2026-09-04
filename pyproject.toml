@@ -1,0 +1,33 @@
+[project]
+name = "hanauta-plugin-vpn-control"
+version = "1.0.0"
+description = "WireGuard control popup with split tunneling support for Hanauta desktop environment"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "PyQt6>=6.6",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pygettext3",
+    "msgfmt",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.uv]
+dev-dependencies = [
+    "pygettext3",
+    "msgfmt",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.pyright]
+pythonVersion = "3.10"
+typeCheckingMode = "basic"
