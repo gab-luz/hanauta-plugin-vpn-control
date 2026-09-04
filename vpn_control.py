@@ -57,6 +57,25 @@ except ModuleNotFoundError:
     from pyqt.shared.theme import load_theme_palette, palette_mtime, rgba
     from pyqt.shared.button_helpers import create_close_button
 
+# Localization
+try:
+    from i18n import _, N_, init_language, get_supported_languages
+except ModuleNotFoundError:
+    # Fallback if i18n module not available
+    def _(message: str) -> str:
+        return message
+    def N_(message: str) -> str:
+        return message
+    def init_language(config_lang: str | None = None) -> str:
+        return "en_US"
+    def get_supported_languages() -> dict[str, str]:
+        return {
+            "en_US": "English (US)",
+            "pt_BR": "Português (Brasil)",
+            "ru_RU": "Русский",
+            "es_AR": "Español (Argentina)",
+        }
+
 APP_DIR = source_root()
 if str(APP_DIR) not in sys.path:
     sys.path.append(str(APP_DIR))
@@ -1650,7 +1669,12 @@ def main() -> int:
         sys.__excepthook__(exc_type, exc, tb)
 
     sys.excepthook = _log_excepthook
-    append_log(f"Starting popup from {PLUGIN_ROOT}")
+
+    # Initialize localization (read from settings)
+    settings = load_vpn_service_settings()
+    lang = str(settings.get("language", "")).strip() or None
+    active_lang = init_language(lang)
+    append_log(f"Starting popup from {PLUGIN_ROOT} (language: {active_lang})")
     append_log(f"Python executable: {sys.executable}")
     append_log(f"argv: {sys.argv}")
     append_log(f"QtSvg available: {QSvgRenderer is not None}")

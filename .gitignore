@@ -44,6 +44,9 @@ logs/
 # Local state
 .local/
 
+# Localization compiled files
+locales/*/LC_MESSAGES/*.mo
+
 # Temporary files
 *.tmp
 *.temp

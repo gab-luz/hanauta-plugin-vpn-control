@@ -1,0 +1,237 @@
+# SOME DESCRIPTIVE TITLE.
+# Copyright (C) YEAR THE PACKAGE'S COPYRIGHT HOLDER
+# This file is distributed under the same license as the PACKAGE package.
+# FIRST AUTHOR <EMAIL@ADDRESS>, YEAR.
+#
+#, fuzzy
+msgid ""
+msgstr ""
+"Project-Id-Version: vpn_control 1.0\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2025-09-04 00:00+0000\n"
+"PO-Revision-Date: 2025-09-04 00:00+0000\n"
+"Last-Translator: \n"
+"Language-Team: \n"
+"Language: es_AR\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=2; plural=(n != 1);\n"
+
+#: vpn_control.py:58
+msgid "Enter domain or IP address"
+msgstr "Ingresá dominio o dirección IP"
+
+#: vpn_control.py:59
+msgid "Examples: example.com, 10.0.0.0/8, 192.168.1.0/24"
+msgstr "Ejemplos: ejemplo.com, 10.0.0.0/8, 192.168.1.0/24"
+
+#: vpn_control.py:60
+msgid "example.com or 10.0.0.0/8"
+msgstr "ejemplo.com o 10.0.0.0/8"
+
+#: vpn_control.py:61
+msgid "Add"
+msgstr "Agregar"
+
+#: vpn_control.py:67
+msgid "WireGuard"
+msgstr "WireGuard"
+
+#: vpn_control.py:68
+msgid "Select a tunnel and bring it up or down."
+msgstr "Seleccioná un túnel y activalo o desactivalo."
+
+#: vpn_control.py:73
+msgid "Checking tunnel state…"
+msgstr "Verificando estado del túnel…"
+
+#: vpn_control.py:74
+msgid "No interface selected"
+msgstr "Ninguna interfaz seleccionada"
+
+#: vpn_control.py:78
+msgid "Refresh WireGuard configs from Hanauta service"
+msgstr "Actualizar configs de WireGuard desde el servicio Hanauta"
+
+#: vpn_control.py:81
+msgid "Available configurations update automatically."
+msgstr "Las configuraciones disponibles se actualizan automáticamente."
+
+#: vpn_control.py:85
+msgid "Split Tunnel Configuration"
+msgstr "Configuración de Tunnel Dividido"
+
+#: vpn_control.py:86
+msgid "Configure per-app and per-domain routing. Changes apply when VPN is active."
+msgstr "Configurá enrutamiento por app y por dominio. Los cambios aplican cuando la VPN está activa."
+
+#: vpn_control.py:88
+msgid "Mode:"
+msgstr "Modo:"
+
+#: vpn_control.py:90
+msgid "App Routing"
+msgstr "Enrutamiento de Apps"
+
+#: vpn_control.py:91
+msgid "Apps forced through VPN (Inclusive mode):"
+msgstr "Apps forzados por VPN (modo Inclusivo):"
+
+#: vpn_control.py:93
+msgctxt "vpn_list_button"
+msgid "Add app to VPN list"
+msgstr "Agregar app a la lista de VPN"
+
+#: vpn_control.py:94
+msgctxt "vpn_list_button"
+msgid "Remove selected app"
+msgstr "Quitar app seleccionada"
+
+#: vpn_control.py:96
+msgid "Apps bypassing VPN (Exclusive mode):"
+msgstr "Apps saltando VPN (modo Exclusivo):"
+
+#: vpn_control.py:98
+msgctxt "bypass_list_button"
+msgid "Add app to bypass list"
+msgstr "Agregar app a la lista de bypass"
+
+#: vpn_control.py:99
+msgctxt "bypass_list_button"
+msgid "Remove selected app"
+msgstr "Quitar app seleccionada"
+
+#: vpn_control.py:101
+msgid "Domain / IP Routing"
+msgstr "Enrutamiento de Dominio / IP"
+
+#: vpn_control.py:102
+msgid "Domains/IPs forced through VPN:"
+msgstr "Dominios/IPs forzados por VPN:"
+
+#: vpn_control.py:104
+msgctxt "vpn_domains_button"
+msgid "Add domain/IP to VPN list"
+msgstr "Agregar dominio/IP a la lista de VPN"
+
+#: vpn_control.py:105
+msgctxt "vpn_domains_button"
+msgid "Remove selected domain"
+msgstr "Quitar dominio seleccionado"
+
+#: vpn_control.py:107
+msgid "Domains/IPs bypassing VPN:"
+msgstr "Dominios/IPs saltando VPN:"
+
+#: vpn_control.py:109
+msgctxt "bypass_domains_button"
+msgid "Add domain/IP to bypass list"
+msgstr "Agregar dominio/IP a la lista de bypass"
+
+#: vpn_control.py:110
+msgctxt "bypass_domains_button"
+msgid "Remove selected domain"
+msgstr "Quitar dominio seleccionado"
+
+#: vpn_control.py:112
+msgid "Live Status"
+msgstr "Estado en Vivo"
+
+#: vpn_control.py:113
+msgid "Split tunnel: inactive"
+msgstr "Tunnel dividido: inactivo"
+
+#: vpn_control.py:150
+msgid "No WireGuard configs found"
+msgstr "No se encontraron configs de WireGuard"
+
+#: vpn_control.py:151
+msgid "Expected `.conf` files in /etc/wireguard."
+msgstr "Se esperan archivos `.conf` en /etc/wireguard."
+
+#: vpn_control.py:153
+msgid "Enable"
+msgstr "Activar"
+
+#: vpn_control.py:155
+msgid "Tunnel active"
+msgstr "Túnel activo"
+
+#: vpn_control.py:155
+msgid "Tunnel inactive"
+msgstr "Túnel inactivo"
+
+#: vpn_control.py:156
+msgid "Selected interface: %s"
+msgstr "Interfaz seleccionada: %s"
+
+#: vpn_control.py:157
+msgid "Disable"
+msgstr "Desactivar"
+
+#: vpn_control.py:159
+msgid "Applying tunnel change…"
+msgstr "Aplicando cambio de túnel…"
+
+#: vpn_control.py:160
+msgid "Applying changes for %s"
+msgstr "Aplicando cambios para %s"
+
+#: vpn_control.py:163
+msgid "WireGuard command failed"
+msgstr "Comando de WireGuard falló"
+
+#: vpn_control.py:164
+msgid "%s"
+msgstr "%s"
+
+#: vpn_control.py:54
+msgid "0 apps selected"
+msgid_plural "%d apps selected"
+msgstr[0] "0 apps seleccionadas"
+msgstr[1] "%d apps seleccionadas"
+
+#: vpn_control.py:46
+msgid "Search installed apps and select one or more entries."
+msgstr "Buscá apps instaladas y seleccioná una o más entradas."
+
+#: vpn_control.py:48
+msgid "Type an app name"
+msgstr "Escribí el nombre de una app"
+
+#: vpn_control.py:49
+msgctxt "dialog_button"
+msgid "Add to VPN list"
+msgstr "Agregar a la lista de VPN"
+
+#: vpn_control.py:49
+msgctxt "dialog_button"
+msgid "Add to bypass list"
+msgstr "Agregar a la lista de bypass"
+
+#: vpn_control.py:52
+msgctxt "dialog_button"
+msgid "Add domain/IP to VPN list"
+msgstr "Agregar dominio/IP a la lista de VPN"
+
+#: vpn_control.py:52
+msgctxt "dialog_button"
+msgid "Add domain/IP to bypass list"
+msgstr "Agregar dominio/IP a la lista de bypass"
+
+#: hanauta_bar_plugin.py:1
+msgid "WireGuard: %s"
+msgstr "WireGuard: %s"
+
+#: hanauta_plugin.py:1
+msgid "vpn_control.py not found in plugin folder."
+msgstr "vpn_control.py no encontrado en la carpeta del plugin."
+
+#: hanauta_plugin.py:2
+msgid "WireGuard popup opened."
+msgstr "Popup de WireGuard abierto."
+
+#: hanauta_plugin.py:3
+msgid "VPN control plugin ready."
+msgstr "Plugin de control VPN listo."
